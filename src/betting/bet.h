@@ -403,10 +403,32 @@ public:
     }
 };
 
+class CBettingDB
+{
+public:
+    // Default Constructor.
+    explicit CBettingDB(std::string dbName, std::size_t cacheSize, bool fWipe);
+
+    bool AdvanceRestorePoint(const uint256& lastBlockHash);
+    bool RestoreToPoint(const uint256& bestBlockHash);
+
+    using Key1byte = unsigned char;
+
+protected:
+    CLevelDBWrapper & getDb();
+    static constexpr std::size_t dbWrapperCacheSize();
+    static constexpr Key1byte restorePointKey();
+    static constexpr Key1byte primaryKey();
+
+private:
+    CLevelDBWrapper db;
+
+};
+
 // Define new map type to store Wagerr mappings.
 using MappingsIndex = std::map<uint32_t, CMapping>;
 
-class CMappingsDB
+class CMappingsDB : public CBettingDB
 {
 public:
     // Default Constructor.
@@ -417,15 +439,12 @@ public:
     bool Save(const CMapping& mapping);
     bool Write(const MappingTypes mappingType, const MappingsIndex& mappingsIndex);
     bool Read(const MappingTypes mappingType, MappingsIndex& mappingsIndex);
-
-private:
-    CLevelDBWrapper db;
 };
 
 // Define new map type to store Wagerr events.
 using EventsIndex = std::map<uint32_t, CPeerlessEvent>;
 
-class CEventsDB
+class CEventsDB : public CBettingDB
 {
 public:
     // Default constructor.
@@ -437,15 +456,12 @@ public:
     bool Erase(const CPeerlessResult& plEvent);
     bool Write(const EventsIndex& eventsIndex);
     bool Read(EventsIndex& eventsIndex);
-
-private:
-    CLevelDBWrapper db;
 };
 
 // Define new map type to store Wagerr results.
 using ResultsIndex = std::map<uint32_t, CPeerlessResult>;
 
-class CResultsDB
+class CResultsDB : public CBettingDB
 {
 public:
     // Default constructor.
@@ -457,9 +473,6 @@ public:
     bool Erase(const CPeerlessResult& plResult);
     bool Write(const ResultsIndex& resultsIndex);
     bool Read(ResultsIndex& resultsIndex);
-
-private:
-    CLevelDBWrapper db;
 };
 
 /** Container for several db objects */

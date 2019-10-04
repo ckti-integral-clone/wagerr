@@ -4912,6 +4912,10 @@ bool AcceptBlock(CBlock& block, CValidationState& state, CBlockIndex** ppindex, 
         for (const CTransaction& tx : block.vtx) {
             ParseBettingTx(tx);
         }
+
+        bettingContext.mappings->AdvanceRestorePoint(pindex->GetBlockHash());
+        bettingContext.events->AdvanceRestorePoint(pindex->GetBlockHash());
+        bettingContext.results->AdvanceRestorePoint(pindex->GetBlockHash());
     }
 
     return true;
