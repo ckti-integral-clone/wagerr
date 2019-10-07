@@ -1589,6 +1589,8 @@ bool AppInit2()
                 }
 
                 if (!fReindex) {
+                    uint256 tipBlockHash{};
+
                     uiInterface.InitMessage(_("Verifying blocks..."));
 
                     // Flag sent to validation code to let it know it can skip certain checks
@@ -1597,7 +1599,8 @@ bool AppInit2()
                     {
                         LOCK(cs_main);
                         CBlockIndex *tip = chainActive[chainActive.Height()];
-                        RPCNotifyBlockChange(tip->GetBlockHash());
+                        tipBlockHash = tip->GetBlockHash();
+                        RPCNotifyBlockChange(tipBlockHash);
                         if (tip && tip->nTime > GetAdjustedTime() + 2 * 60 * 60) {
                             strLoadError = _("The block database contains a block which appears to be from the future. "
                                              "This may be due to your computer's date and time being set incorrectly. "
@@ -1609,6 +1612,17 @@ bool AppInit2()
                     // Zerocoin must check at level 4
                     if (!CVerifyDB().VerifyDB(pcoinsdbview, 4, GetArg("-checkblocks", 100))) {
                         strLoadError = _("Corrupted block database detected");
+                        fVerifyingBlocks = false;
+                        break;
+                    }
+
+                    if (
+                            tipBlockHash.IsNull() ||
+                            !bettingContext.mappings->RestoreToPoint(tipBlockHash) ||
+                            !bettingContext.events->RestoreToPoint(tipBlockHash) ||
+                            !bettingContext.results->RestoreToPoint(tipBlockHash)
+                    ) {
+                        strLoadError = _("Corrupted betting database detected. You need to rebuild the database using -reindex");
                         fVerifyingBlocks = false;
                         break;
                     }

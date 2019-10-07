@@ -7,8 +7,6 @@
 
 #include "wallet/wallet.h"
 
-static constexpr std::size_t dbWrapperCacheSize{10 << 20};
-
 #define BTX_FORMAT_VERSION 0x01
 #define BTX_HEX_PREFIX "42"
 
@@ -38,7 +36,7 @@ std::string MakeDbPath(const char* name)
     dir /= "betting";
     dir /= name;
 
-    if (is_directory(dir) || create_directories(dir) ) {
+    if (boost::filesystem::is_directory(dir) || boost::filesystem::create_directories(dir) ) {
         result = boost::to_string(dir);
         result.erase(0, 1);
         result.erase(result.size() - 1);
@@ -902,8 +900,48 @@ bool CMapping::FromOpCode(std::string opCode, CMapping &cm)
 /**
  * Constructor for the CMapping database object.
  */
+CBettingDB::CBettingDB(std::string dbName, std::size_t cacheSize, bool fWipe) :
+    db{dbName, cacheSize, false, fWipe}
+{
+}
+
+bool CBettingDB::AdvanceRestorePoint(const uint256& lastBlockHash)
+{
+    return getDb().Write(restorePointKey(), lastBlockHash);
+}
+
+bool CBettingDB::RestoreToPoint(const uint256& bestBlockHash)
+{
+    uint256 lastBlockHash{};
+    return getDb().Read(restorePointKey(), lastBlockHash) &&
+           bestBlockHash == lastBlockHash;
+}
+
+CLevelDBWrapper& CBettingDB::getDb()
+{
+    return db;
+}
+
+constexpr std::size_t CBettingDB::dbWrapperCacheSize()
+{
+    return 10 << 20;
+}
+
+constexpr CBettingDB::Key1byte CBettingDB::restorePointKey()
+{
+   return '#';
+}
+
+constexpr CBettingDB::Key1byte CBettingDB::primaryKey()
+{
+    return '_';
+}
+
+/**
+ * Constructor for the CMapping database object.
+ */
 CMappingsDB::CMappingsDB(bool fWipe) :
-    db{GetDbName(), dbWrapperCacheSize, false, fWipe}
+    CBettingDB{GetDbName(), dbWrapperCacheSize(), fWipe}
 {
 }
 
@@ -932,7 +970,7 @@ bool CMappingsDB::Save(const CMapping& mapping)
  */
 bool CMappingsDB::Write(const MappingTypes mappingType, const MappingsIndex& mappingsIndex)
 {
-    return db.Write(mappingType, mappingsIndex);
+    return getDb().Write(primaryKey() + static_cast<Key1byte>(mappingType), mappingsIndex);
 }
 
 
@@ -946,7 +984,7 @@ bool CMappingsDB::Write(const MappingTypes mappingType, const MappingsIndex& map
 */
 bool CMappingsDB::Read(MappingTypes mappingType, MappingsIndex& mappingsIndex)
 {
-   return db.Read(mappingType, mappingsIndex);
+   return getDb().Read(primaryKey() + static_cast<Key1byte>(mappingType), mappingsIndex);
 }
 
 
@@ -954,7 +992,7 @@ bool CMappingsDB::Read(MappingTypes mappingType, MappingsIndex& mappingsIndex)
  * Constructor for the events database object.
  */
 CEventsDB::CEventsDB(bool fWipe) :
-    db{GetDbName(), dbWrapperCacheSize, false, fWipe}
+    CBettingDB{GetDbName(), dbWrapperCacheSize(), fWipe}
 {
 }
 
@@ -1001,7 +1039,7 @@ bool CEventsDB::Erase(const CPeerlessResult& plEvent)
  */
 bool CEventsDB::Write(const EventsIndex& eventsIndex)
 {
-    return db.Write(0, eventsIndex);
+    return getDb().Write(primaryKey(), eventsIndex);
 }
 
 /**
@@ -1013,14 +1051,14 @@ bool CEventsDB::Write(const EventsIndex& eventsIndex)
  */
 bool CEventsDB::Read(EventsIndex& eventsIndex)
 {
-    return db.Read(0, eventsIndex);
+    return getDb().Read(primaryKey(), eventsIndex);
 }
 
 /**
  * Constructor for the results database object.
  */
 CResultsDB::CResultsDB(bool fWipe) :
-    db{GetDbName(), dbWrapperCacheSize, false, fWipe}
+    CBettingDB{GetDbName(), dbWrapperCacheSize(), fWipe}
 {
 }
 
@@ -1067,7 +1105,7 @@ bool CResultsDB::Erase(const CPeerlessResult& plResult)
  */
 bool CResultsDB::Write(const ResultsIndex& resultsIndex)
 {
-    return db.Write(0, resultsIndex);
+    return getDb().Write(primaryKey(), resultsIndex);
 }
 
 /**
@@ -1079,7 +1117,7 @@ bool CResultsDB::Write(const ResultsIndex& resultsIndex)
  */
 bool CResultsDB::Read(ResultsIndex& resultsIndex)
 {
-    return db.Read(0, resultsIndex);
+    return getDb().Read(primaryKey(), resultsIndex);
 }
 
 /**
