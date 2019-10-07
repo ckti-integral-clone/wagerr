@@ -47,7 +47,7 @@ UniValue getmappingid(const UniValue& params, bool fHelp)
     UniValue mappings{UniValue::VOBJ};
     MappingsIndex mappingsIndex{};
 
-    if (CMapping::ToTypeName(type) != mIndex) {
+    if (static_cast<int>(type) < 0 || CMapping::ToTypeName(type) != mIndex) {
         throw std::runtime_error("No mapping exist for the mapping index you provided.");
     }
 
