@@ -913,8 +913,12 @@ bool CBettingDB::AdvanceRestorePoint(const uint256& lastBlockHash)
 bool CBettingDB::RestoreToPoint(const uint256& bestBlockHash)
 {
     uint256 lastBlockHash{};
-    return getDb().Read(restorePointKey(), lastBlockHash) &&
-           bestBlockHash == lastBlockHash;
+    if (!getDb().Read(restorePointKey(), lastBlockHash)) {
+        return getDb().Write(checkPointKey(), bestBlockHash) &&
+               getDb().Read(checkPointKey(), lastBlockHash) &&
+               lastBlockHash == bestBlockHash;
+    }
+    return bestBlockHash == lastBlockHash;
 }
 
 CLevelDBWrapper& CBettingDB::getDb()
@@ -925,6 +929,11 @@ CLevelDBWrapper& CBettingDB::getDb()
 constexpr std::size_t CBettingDB::dbWrapperCacheSize()
 {
     return 10 << 20;
+}
+
+constexpr CBettingDB::Key1byte CBettingDB::checkPointKey()
+{
+   return '=';
 }
 
 constexpr CBettingDB::Key1byte CBettingDB::restorePointKey()
@@ -1129,7 +1138,7 @@ bool CResultsDB::Read(ResultsIndex& resultsIndex)
 bool IsValidOracleTx(const CTxIn &txin)
 {
     COutPoint prevout = txin.prevout;
-    std::vector<string> oracleAddrs = Params().OracleWalletAddrs();
+    std::vector<std::string> oracleAddrs = Params().OracleWalletAddrs();
 
     uint256 hashBlock;
     CTransaction txPrev;
@@ -2006,7 +2015,7 @@ void ParseBettingTx(const CTransaction& tx)
         std::string s = txout.scriptPubKey.ToString();
 
         if (0 == strncmp(s.c_str(), "OP_RETURN", 9)) {
-            std::vector<unsigned char> v = ParseHex(s.substr(9, string::npos));
+            std::vector<unsigned char> v = ParseHex(s.substr(9, std::string::npos));
             std::string opCode(v.begin(), v.end());
 
             CPeerlessBet plBet;
@@ -2105,7 +2114,7 @@ void ParseBettingTx(const CTransaction& tx)
             std::string s = txout.scriptPubKey.ToString();
 
             if (0 == strncmp(s.c_str(), "OP_RETURN", 9)) {
-                std::vector<unsigned char> v = ParseHex(s.substr(9, string::npos));
+                std::vector<unsigned char> v = ParseHex(s.substr(9, std::string::npos));
                 std::string opCode(v.begin(), v.end());
 
                 // TODO - Optimise the OP code validation, we don't need to compare current OP code against all TX types.

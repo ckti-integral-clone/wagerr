@@ -417,6 +417,7 @@ public:
 protected:
     CLevelDBWrapper & getDb();
     static constexpr std::size_t dbWrapperCacheSize();
+    static constexpr Key1byte checkPointKey();
     static constexpr Key1byte restorePointKey();
     static constexpr Key1byte primaryKey();
 
