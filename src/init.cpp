@@ -1616,16 +1616,16 @@ bool AppInit2()
                         break;
                     }
 
-                    if (
-                            tipBlockHash.IsNull() ||
-                            !bettingContext.mappings->RestoreToPoint(tipBlockHash) ||
-                            !bettingContext.events->RestoreToPoint(tipBlockHash) ||
-                            !bettingContext.results->RestoreToPoint(tipBlockHash)
-                    ) {
-                        strLoadError = _("Corrupted betting database detected. You need to rebuild the database using -reindex");
-                        fVerifyingBlocks = false;
-                        break;
-                    }
+//                    if (
+//                            tipBlockHash.IsNull() ||
+//                            !bettingContext.mappings->RestoreToPoint(tipBlockHash) ||
+//                            !bettingContext.events->RestoreToPoint(tipBlockHash) ||
+//                            !bettingContext.results->RestoreToPoint(tipBlockHash)
+//                    ) {
+//                        strLoadError = _("Corrupted betting database detected. You need to rebuild the database using -reindex");
+//                        fVerifyingBlocks = false;
+//                        break;
+//                    }
                 }
             } catch (std::exception& e) {
                 if (fDebug) LogPrintf("%s\n", e.what());

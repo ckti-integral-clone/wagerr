@@ -69,8 +69,9 @@ UniValue listevents(const UniValue& params, bool fHelp)
 
     EventsIndex eventsIndex{};
     UniValue result{UniValue::VARR};
+    const int chainHeight{GetActiveChainHeight(true)};
 
-    if (!bettingContext.events->Read(eventsIndex)) {
+    if (!bettingContext.events->Read(eventsIndex, chainHeight)) {
         return result;
     }
 
@@ -80,10 +81,10 @@ UniValue listevents(const UniValue& params, bool fHelp)
     MappingsIndex tournamentsIndex{};
     std::string sportFilter = "";
 
-    bettingContext.mappings->Read(sportMapping, sportsIndex);
-    bettingContext.mappings->Read(roundMapping, roundsIndex);
-    bettingContext.mappings->Read(teamMapping, teamsIndex);
-    bettingContext.mappings->Read(tournamentMapping, tournamentsIndex);
+    bettingContext.mappings->Read(sportMapping, sportsIndex, chainHeight);
+    bettingContext.mappings->Read(roundMapping, roundsIndex, chainHeight);
+    bettingContext.mappings->Read(teamMapping, teamsIndex, chainHeight);
+    bettingContext.mappings->Read(tournamentMapping, tournamentsIndex, chainHeight);
 
     if (params.size() >= 1) {
         sportFilter = params[0].get_str();
@@ -188,12 +189,14 @@ UniValue listchaingamesevents(const UniValue& params, bool fHelp)
             HelpExampleCli("listchaingamesevents", "") + HelpExampleRpc("listchaingamesevents", ""));
 
     UniValue ret(UniValue::VARR);
-
     //CBlockIndex* pindex = chainActive.Height() > Params().BetStartHeight() ? chainActive[Params().BetStartHeight()] : NULL;
     CBlockIndex *BlocksIndex = NULL;
-
     int height = (Params().NetworkID() == CBaseChainParams::MAIN) ? chainActive.Height() - 10500 : chainActive.Height() - 1500;
-    BlocksIndex = chainActive[height];
+
+    {
+        LOCK(cs_main);
+        BlocksIndex = chainActive[height];
+    }
 
     while (BlocksIndex) {
         CBlock block;
@@ -286,8 +289,9 @@ UniValue listbets(const UniValue& params, bool fHelp)
 
     UniValue result{UniValue::VARR};
     EventsIndex eventsIndex{};
+    const int chainHeight{GetActiveChainHeight()};
 
-    if (!bettingContext.events->Read(eventsIndex)) {
+    if (!bettingContext.events->Read(eventsIndex, chainHeight)) {
         return result;
     }
 
@@ -295,8 +299,8 @@ UniValue listbets(const UniValue& params, bool fHelp)
     MappingsIndex tournamentsIndex{};
     const CWallet::TxItems & txOrdered{pwalletMain->wtxOrdered};
 
-    bettingContext.mappings->Read(teamMapping, teamsIndex);
-    bettingContext.mappings->Read(tournamentMapping, tournamentsIndex);
+    bettingContext.mappings->Read(teamMapping, teamsIndex, chainHeight);
+    bettingContext.mappings->Read(tournamentMapping, tournamentsIndex, chainHeight);
 
     // iterate backwards until we have nCount items to return:
     for (CWallet::TxItems::const_reverse_iterator it = txOrdered.rbegin(); it != txOrdered.rend(); ++it) {
@@ -341,7 +345,10 @@ UniValue listbets(const UniValue& params, bool fHelp)
 
                         // Check if the users bet has a result posted, if so check to see it its a winning or losing bet.
                         ResultsIndex resultsIndex{};
-                        if (bettingContext.results->Read(resultsIndex) && resultsIndex.size() != 0) {
+                        if (
+                                bettingContext.results->Read(resultsIndex, chainHeight) &&
+                                resultsIndex.size() != 0
+                        ) {
                             std::string betResult = "pending";
 
                             if (resultsIndex.count(plBet.nEventId) != 0) {
@@ -896,7 +903,7 @@ UniValue placebet(const UniValue& params, bool fHelp)
     if (params.size() > 4 && !params[4].isNull() && !params[4].get_str().empty())
         wtx.mapValue["to"] = params[4].get_str();
 
-    EnsureWalletIsUnlocked();
+    EnsureWalletIsUnlocked(false);
     EnsureEnoughWagerr(nAmount);
 
     CBitcoinAddress address("");
@@ -965,7 +972,7 @@ UniValue placechaingamesbet(const UniValue& params, bool fHelp)
     CWalletTx wtx;
 
     // Validate amount
-    EnsureWalletIsUnlocked();
+    EnsureWalletIsUnlocked(false);
     EnsureEnoughWagerr(nAmount);
 
     //TODO Respond if amount not correct
@@ -1146,9 +1153,10 @@ UniValue geteventsliability(const UniValue& params, bool fHelp)
     int payoutThreshold = params[0].get_int();
     int betThreshold = params[1].get_int();
     UniValue ret(UniValue::VARR);
+    const int chainHeight{GetActiveChainHeight()};
 
     // Check the events index actually has events,
-    if (!bettingContext.events->Read(eventsIndex) || eventsIndex.size() < 1) {
+    if (!bettingContext.events->Read(eventsIndex, chainHeight) || eventsIndex.size() < 1) {
         throw std::runtime_error("Currently no events to list.");
     }
 

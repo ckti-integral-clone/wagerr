@@ -824,7 +824,7 @@ std::string CMapping::ToTypeName(MappingTypes type)
     case roundMapping:
         return "rounds";
     case teamMapping:
-        return "teams";
+        return "teamnames";
     case tournamentMapping:
         return "tournaments";
     }
@@ -905,21 +905,21 @@ CBettingDB::CBettingDB(std::string dbName, std::size_t cacheSize, bool fWipe) :
 {
 }
 
-bool CBettingDB::AdvanceRestorePoint(const uint256& lastBlockHash)
-{
-    return getDb().Write(restorePointKey(), lastBlockHash);
-}
+//bool CBettingDB::AdvanceRestorePoint(const uint256& lastBlockHash)
+//{
+//    return getDb().Write(restorePointKey(), lastBlockHash);
+//}
 
-bool CBettingDB::RestoreToPoint(const uint256& bestBlockHash)
-{
-    uint256 lastBlockHash{};
-    if (!getDb().Read(restorePointKey(), lastBlockHash)) {
-        return getDb().Write(checkPointKey(), bestBlockHash) &&
-               getDb().Read(checkPointKey(), lastBlockHash) &&
-               lastBlockHash == bestBlockHash;
-    }
-    return bestBlockHash == lastBlockHash;
-}
+//bool CBettingDB::RestoreToPoint(const uint256& bestBlockHash)
+//{
+//    uint256 lastBlockHash{};
+//    if (!getDb().Read(restorePointKey(), lastBlockHash)) {
+//        return getDb().Write(checkPointKey(), bestBlockHash) &&
+//               getDb().Read(checkPointKey(), lastBlockHash) &&
+//               lastBlockHash == bestBlockHash;
+//    }
+//    return bestBlockHash == lastBlockHash;
+//}
 
 CLevelDBWrapper& CBettingDB::getDb()
 {
@@ -931,19 +931,9 @@ constexpr std::size_t CBettingDB::dbWrapperCacheSize()
     return 10 << 20;
 }
 
-constexpr CBettingDB::Key1byte CBettingDB::checkPointKey()
+constexpr CBettingDB::KeyType CBettingDB::makePrimaryKey(const int version)
 {
-   return '=';
-}
-
-constexpr CBettingDB::Key1byte CBettingDB::restorePointKey()
-{
-   return '#';
-}
-
-constexpr CBettingDB::Key1byte CBettingDB::primaryKey()
-{
-    return '_';
+    return static_cast<KeyType>(version) << sizeof(version) * 8;
 }
 
 /**
@@ -959,14 +949,15 @@ std::string CMappingsDB::GetDbName()
     return MakeDbPath("mappings");
 }
 
-bool CMappingsDB::Save(const CMapping& mapping)
+bool CMappingsDB::Save(const CMapping& mapping, const int version)
 {
     MappingsIndex mappingIndex{};
-    if (!Read(mapping.GetType(), mappingIndex)) {
+
+    if (!Read(mapping.GetType(), mappingIndex, version)) {
         mappingIndex.clear();
     }
     mappingIndex[mapping.nId] = mapping;
-    return Write(mapping.GetType(), mappingIndex);
+    return Write(mapping.GetType(), mappingIndex, version);
 }
 
 /**
@@ -977,11 +968,27 @@ bool CMappingsDB::Save(const CMapping& mapping)
  * @param mappingIndex    The index map which contains Wagerr mappings.
  * @return                Bool
  */
-bool CMappingsDB::Write(const MappingTypes mappingType, const MappingsIndex& mappingsIndex)
+bool CMappingsDB::Write(const MappingTypes mappingType, const MappingsIndex& mappingsIndex, const int version)
 {
-    return getDb().Write(primaryKey() + static_cast<Key1byte>(mappingType), mappingsIndex);
-}
+    CLevelDBBatch batch{};
+    const int limit{version - Params().MaxReorganizationDepth()};
+    std::unique_ptr<leveldb::Iterator> iterator{getDb().NewIterator()};
 
+    for (iterator->SeekToFirst(); iterator->Valid(); iterator->Next()) {
+        KeyType recordKey{};
+        leveldb::Slice keySlice{iterator->key()};
+        CDataStream stream{keySlice.data(), keySlice.data() + keySlice.size(), SER_DISK, CLIENT_VERSION};
+        stream >> recordKey;
+
+        const auto key{parseKey(recordKey)};
+        if (key.first == mappingType && key.second < limit) {
+            batch.Erase(recordKey);
+        }
+    }
+    batch.Write(makeKey(mappingType, version), mappingsIndex);
+
+    return getDb().WriteBatch(batch);
+}
 
 /**
 * Reads a .dat file and deserializes the data to recreate an index map object.
@@ -991,11 +998,39 @@ bool CMappingsDB::Write(const MappingTypes mappingType, const MappingsIndex& map
 * @param mappingIndex    The index map which contains Wagerr mappings.
 * @return                Bool
 */
-bool CMappingsDB::Read(MappingTypes mappingType, MappingsIndex& mappingsIndex)
+bool CMappingsDB::Read(const MappingTypes mappingType, MappingsIndex& mappingsIndex, const int version)
 {
-   return getDb().Read(primaryKey() + static_cast<Key1byte>(mappingType), mappingsIndex);
+    auto result{false};
+
+    for (int n{version - Params().MaxReorganizationDepth()}; n <= version; n++) {
+        MappingsIndex mi{};
+        if (getDb().Read(makeKey(mappingType, version), mi)) {
+            mappingsIndex.insert(mi.begin(), mi.end());
+            result = true;
+        }
+    }
+
+    return result;
 }
 
+constexpr CBettingDB::KeyType CMappingsDB::makeKey(const MappingTypes mappingType, const int version)
+{
+    return makePrimaryKey(version) + static_cast<KeyType>(mappingType);
+}
+
+std::pair<MappingTypes, int> CMappingsDB::parseKey(const KeyType key)
+{
+    union {
+      KeyType key;
+      struct {
+        int version;
+        MappingTypes type;
+      };
+    } splitter{};
+
+    splitter.key = key;
+    return std::make_pair(splitter.type, splitter.version);
+}
 
 /**
  * Constructor for the events database object.
@@ -1015,14 +1050,14 @@ std::string CEventsDB::GetDbName()
  *
  * @param pe CPeerless Event object.
  */
-bool CEventsDB::Save(const CPeerlessEvent& plEvent)
+bool CEventsDB::Save(const CPeerlessEvent& plEvent, const int version)
 {
     EventsIndex eventIndex{};
-    if (!Read(eventIndex)) {
+    if (!Read(eventIndex, version)) {
         eventIndex.clear();
     }
     eventIndex[plEvent.nEventId] = plEvent;
-    return Write(eventIndex);
+    return Write(eventIndex, version);
 }
 
 /**
@@ -1030,12 +1065,12 @@ bool CEventsDB::Save(const CPeerlessEvent& plEvent)
  *
  * @param eventId
  */
-bool CEventsDB::Erase(const CPeerlessResult& plEvent)
+bool CEventsDB::Erase(const CPeerlessResult& plEvent, const int version)
 {
     EventsIndex eventIndex{};
-    if (Read(eventIndex)) {
+    if (Read(eventIndex, version)) {
         eventIndex.erase(plEvent.nEventId);
-        return Write(eventIndex);
+        return Write(eventIndex, version);
     }
     return false;
 }
@@ -1046,9 +1081,9 @@ bool CEventsDB::Erase(const CPeerlessResult& plEvent)
  * @param eventIndex       The events index map which contains the current live events.
  * @return                 Bool
  */
-bool CEventsDB::Write(const EventsIndex& eventsIndex)
+bool CEventsDB::Write(const EventsIndex& eventsIndex, const int version)
 {
-    return getDb().Write(primaryKey(), eventsIndex);
+    return getDb().Write(makePrimaryKey(version), eventsIndex);
 }
 
 /**
@@ -1058,9 +1093,9 @@ bool CEventsDB::Write(const EventsIndex& eventsIndex)
  * @param eventIndex The event index map which will be populated with data from the file.
  * @return           Bool
  */
-bool CEventsDB::Read(EventsIndex& eventsIndex)
+bool CEventsDB::Read(EventsIndex& eventsIndex, const int version)
 {
-    return getDb().Read(primaryKey(), eventsIndex);
+    return getDb().Read(makePrimaryKey(version), eventsIndex);
 }
 
 /**
@@ -1081,14 +1116,14 @@ std::string CResultsDB::GetDbName()
  *
  * @param pr CPeerlessResult object.
  */
-bool CResultsDB::Save(const CPeerlessResult& plResult)
+bool CResultsDB::Save(const CPeerlessResult& plResult, const int version)
 {
     ResultsIndex resultsIndex{};
-    if (!Read(resultsIndex)) {
+    if (!Read(resultsIndex, version)) {
         resultsIndex.clear();
     }
     resultsIndex[plResult.nEventId] = plResult;
-    return Write(resultsIndex);
+    return Write(resultsIndex, version);
 }
 
 /**
@@ -1096,12 +1131,12 @@ bool CResultsDB::Save(const CPeerlessResult& plResult)
  *
  * @param pe
  */
-bool CResultsDB::Erase(const CPeerlessResult& plResult)
+bool CResultsDB::Erase(const CPeerlessResult& plResult, const int version)
 {
     ResultsIndex resultsIndex{};
-    if (Read(resultsIndex)) {
+    if (Read(resultsIndex, version)) {
         resultsIndex.erase(plResult.nEventId);
-        return Write(resultsIndex);
+        return Write(resultsIndex, version);
     }
     return false;
 }
@@ -1112,9 +1147,9 @@ bool CResultsDB::Erase(const CPeerlessResult& plResult)
  * @param eventIndex       The events index map which contains the current live events.
  * @return                 Bool
  */
-bool CResultsDB::Write(const ResultsIndex& resultsIndex)
+bool CResultsDB::Write(const ResultsIndex& resultsIndex, const int version)
 {
-    return getDb().Write(primaryKey(), resultsIndex);
+    return getDb().Write(makePrimaryKey(version), resultsIndex);
 }
 
 /**
@@ -1124,9 +1159,9 @@ bool CResultsDB::Write(const ResultsIndex& resultsIndex)
  * @param eventIndex The event index map which will be populated with data from the file.
  * @return           Bool
  */
-bool CResultsDB::Read(ResultsIndex& resultsIndex)
+bool CResultsDB::Read(ResultsIndex& resultsIndex, const int version)
 {
-    return getDb().Read(primaryKey(), resultsIndex);
+    return getDb().Read(makePrimaryKey(version), resultsIndex);
 }
 
 /**
@@ -2006,8 +2041,9 @@ std::vector<CBetOut> GetCGLottoBetPayouts (int height)
 void ParseBettingTx(const CTransaction& tx)
 {
     // Ensure the event TX has come from Oracle wallet.
-    const CTxIn &txin = tx.vin[0];
-    bool validOracleTx = IsValidOracleTx(txin);
+    const CTxIn& txin{tx.vin[0]};
+    const bool validOracleTx{IsValidOracleTx(txin)};
+    const int chainHeight{GetActiveChainHeight(true)};
 
     // Search for any new bets
     for (unsigned int i = 0; i < tx.vout.size(); i++) {
@@ -2026,7 +2062,7 @@ void ParseBettingTx(const CTransaction& tx)
                 uint64_t betXPermille{Params().BetXPermille()};
 
                 // Check the events index actually has events
-                if (bettingContext.events->Read(eventsIndex) && eventsIndex.size() > 0) {
+                if (bettingContext.events->Read(eventsIndex, chainHeight) && eventsIndex.size() > 0) {
                     CPeerlessEvent pe = eventsIndex.find(plBet.nEventId)->second;
                     CAmount payout = 0 * COIN;
                     CAmount burn = 0;
@@ -2100,7 +2136,7 @@ void ParseBettingTx(const CTransaction& tx)
                     }
 
                     eventsIndex[plBet.nEventId] = pe;
-                    bettingContext.events->Write(eventsIndex);
+                    bettingContext.events->Write(eventsIndex, chainHeight);
                 }
             }
         }
@@ -2123,13 +2159,13 @@ void ParseBettingTx(const CTransaction& tx)
                 // If mapping found then add it to the relating map index and write the map index to disk.
                 CMapping mapping{};
                 if (CMapping::FromOpCode(opCode, mapping)) {
-                    bettingContext.mappings->Save(mapping);
+                    bettingContext.mappings->Save(mapping, chainHeight);
                 }
 
                 // If events found in block add them to the events index.
                 CPeerlessEvent plEvent{};
                 if (CPeerlessEvent::FromOpCode(opCode, plEvent)) {
-                    bettingContext.events->Save(plEvent);
+                    bettingContext.events->Save(plEvent, chainHeight);
                 }
 
                 // If event patch found in block apply them to the events.
@@ -2137,7 +2173,10 @@ void ParseBettingTx(const CTransaction& tx)
                 if (CPeerlessEventPatch::FromOpCode(opCode, plEventPatch)) {
                     EventsIndex eventIndex{};
                     // First check a peerless event exists in the event index.
-                    if (bettingContext.events->Read(eventIndex) && eventIndex.count(plEventPatch.nEventId) > 0) {
+                    if (
+                            bettingContext.events->Read(eventIndex, chainHeight) &&
+                            eventIndex.count(plEventPatch.nEventId) > 0
+                    ) {
                         // Get the event object from the index and update the totals odds values.
                         CPeerlessEvent plEvent = eventIndex.find(plEventPatch.nEventId)->second;
 
@@ -2145,14 +2184,14 @@ void ParseBettingTx(const CTransaction& tx)
 
                         // Update the event in the event index.
                         eventIndex[plEventPatch.nEventId] = plEvent;
-                        bettingContext.events->Write(eventIndex);
+                        bettingContext.events->Write(eventIndex, chainHeight);
                     }
                 }
 
                 // If results found in block add result to result index.
                 CPeerlessResult plResult{};
                 if (CPeerlessResult::FromOpCode(opCode, plResult)) {
-                    bettingContext.results->Save(plResult);
+                    bettingContext.results->Save(plResult, chainHeight);
                 }
 
                 // If update money line odds TX found in block, update the event index.
@@ -2160,7 +2199,10 @@ void ParseBettingTx(const CTransaction& tx)
                 if (CPeerlessUpdateOdds::FromOpCode(opCode, puo)) {
                     EventsIndex eventIndex{};
                     // First check a peerless event exists in the event index.
-                    if (bettingContext.events->Read(eventIndex) && eventIndex.count(puo.nEventId) > 0) {
+                    if (
+                            bettingContext.events->Read(eventIndex, chainHeight) &&
+                            eventIndex.count(puo.nEventId) > 0
+                    ) {
                         // Get the event object from the index and update the money line odds values.
                         CPeerlessEvent plEvent = eventIndex.find(puo.nEventId)->second;
 
@@ -2170,7 +2212,7 @@ void ParseBettingTx(const CTransaction& tx)
 
                         // Update the event in the event index.
                         eventIndex[puo.nEventId] = plEvent;
-                        bettingContext.events->Write(eventIndex);
+                        bettingContext.events->Write(eventIndex, chainHeight);
                     }
                 }
 
@@ -2179,7 +2221,10 @@ void ParseBettingTx(const CTransaction& tx)
                 if (CPeerlessSpreadsEvent::FromOpCode(opCode, spreadEvent)) {
                     EventsIndex eventIndex{};
                     // First check a peerless event exists in the event index.
-                    if (bettingContext.events->Read(eventIndex) && eventIndex.count(spreadEvent.nEventId) > 0) {
+                    if (
+                            bettingContext.events->Read(eventIndex, chainHeight) &&
+                            eventIndex.count(spreadEvent.nEventId) > 0
+                    ) {
                         // Get the event object from the index and update the spread odds values.
                         CPeerlessEvent plEvent = eventIndex.find(spreadEvent.nEventId)->second;
 
@@ -2189,7 +2234,7 @@ void ParseBettingTx(const CTransaction& tx)
 
                         // Update the event in the event index.
                         eventIndex[spreadEvent.nEventId] = plEvent;
-                        bettingContext.events->Write(eventIndex);
+                        bettingContext.events->Write(eventIndex, chainHeight);
                     }
                 }
 
@@ -2198,7 +2243,10 @@ void ParseBettingTx(const CTransaction& tx)
                 if (CPeerlessTotalsEvent::FromOpCode(opCode, totalsEvent)) {
                     EventsIndex eventIndex{};
                     // First check a peerless event exists in the event index.
-                    if (bettingContext.events->Read(eventIndex) && eventIndex.count(totalsEvent.nEventId) > 0) {
+                    if (
+                            bettingContext.events->Read(eventIndex, chainHeight) &&
+                            eventIndex.count(totalsEvent.nEventId) > 0
+                    ) {
                         // Get the event object from the index and update the totals odds values.
                         CPeerlessEvent plEvent = eventIndex.find(totalsEvent.nEventId)->second;
 
@@ -2208,10 +2256,21 @@ void ParseBettingTx(const CTransaction& tx)
 
                         // Update the event in the event index.
                         eventIndex[totalsEvent.nEventId] = plEvent;
-                        bettingContext.events->Write(eventIndex);
+                        bettingContext.events->Write(eventIndex, chainHeight);
                     }
                 }
             }
         }
     }
+}
+
+int GetActiveChainHeight(const bool lockHeld)
+{
+    if (lockHeld) {
+        AssertLockHeld(cs_main);
+        return chainActive.Height();
+    }
+
+    LOCK(cs_main);
+    return chainActive.Height();
 }

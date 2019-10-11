@@ -7,6 +7,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include "net.h"
+#include "main.h"
 #include "betting/bet.h"
 #include "rpc/server.h"
 
@@ -43,6 +44,7 @@ UniValue getmappingid(const UniValue& params, bool fHelp)
     const std::string name{params[1].get_str()};
     const std::string mIndex{params[0].get_str()};
     const MappingTypes type{CMapping::FromTypeName(mIndex)};
+    const int chainHeight{GetActiveChainHeight()};
     UniValue result{UniValue::VARR};
     UniValue mappings{UniValue::VOBJ};
     MappingsIndex mappingsIndex{};
@@ -51,9 +53,10 @@ UniValue getmappingid(const UniValue& params, bool fHelp)
         throw std::runtime_error("No mapping exist for the mapping index you provided.");
     }
 
-    bool mappingFound  = false;
-    unsigned int nFirstIndexFree = 0;
-    if (bettingContext.mappings->Read(type, mappingsIndex)) {
+    bool mappingFound{false};
+    unsigned int nFirstIndexFree{0};
+
+    if (bettingContext.mappings->Read(type, mappingsIndex, chainHeight)) {
         // Check the map for the string name.
         bool FirstIndexFreeFound = false;
         std::map<uint32_t, CMapping>::iterator it;
@@ -86,7 +89,7 @@ UniValue getmappingid(const UniValue& params, bool fHelp)
         m.sName    = name;
         m.nVersion = 1;
 
-        if (bettingContext.mappings->Save(m)) {
+        if (bettingContext.mappings->Save(m, chainHeight)) {
             mappings.push_back(Pair("mapping-id",  (uint64_t) nFirstIndexFree));
             mappings.push_back(Pair("exists", false));
             mappings.push_back(Pair("mapping-index", mIndex));
@@ -128,6 +131,7 @@ UniValue getmappingname(const UniValue& params, bool fHelp)
     const std::string mIndex{params[0].get_str()};
     const uint32_t id{static_cast<uint32_t>(std::stoul(params[1].get_str()))};
     const MappingTypes type{CMapping::FromTypeName(mIndex)};
+    const int chainHeight{GetActiveChainHeight()};
     UniValue result{UniValue::VARR};
     UniValue mapping{UniValue::VOBJ};
     MappingsIndex mappingsIndex{};
@@ -137,13 +141,14 @@ UniValue getmappingname(const UniValue& params, bool fHelp)
         throw std::runtime_error("No mapping exist for the mapping index you provided.");
     }
 
-    if (!bettingContext.mappings->Read(type, mappingsIndex)) {
+    if (!bettingContext.mappings->Read(type, mappingsIndex, chainHeight)) {
         throw std::runtime_error("No mapping saved for the mapping type you provided.");
     }
 
     // Check the map for the mapping ID.
     bool mappingFound = false;
     std::map<uint32_t, CMapping>::iterator it;
+
     for (it = mappingsIndex.begin(); it != mappingsIndex.end(); it++) {
         if (it->first == id) {
             mapping.push_back(Pair("mapping-name", it->second.sName));

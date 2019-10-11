@@ -409,17 +409,15 @@ public:
     // Default Constructor.
     explicit CBettingDB(std::string dbName, std::size_t cacheSize, bool fWipe);
 
-    bool AdvanceRestorePoint(const uint256& lastBlockHash);
-    bool RestoreToPoint(const uint256& bestBlockHash);
+//    bool AdvanceRestorePoint(const uint256& lastBlockHash);
+//    bool RestoreToPoint(const uint256& bestBlockHash);
 
-    using Key1byte = unsigned char;
+    using KeyType = std::uint64_t;
 
 protected:
     CLevelDBWrapper & getDb();
     static constexpr std::size_t dbWrapperCacheSize();
-    static constexpr Key1byte checkPointKey();
-    static constexpr Key1byte restorePointKey();
-    static constexpr Key1byte primaryKey();
+    static constexpr KeyType makePrimaryKey(const int version);
 
 private:
     CLevelDBWrapper db;
@@ -437,9 +435,13 @@ public:
 
     static std::string GetDbName();
 
-    bool Save(const CMapping& mapping);
-    bool Write(const MappingTypes mappingType, const MappingsIndex& mappingsIndex);
-    bool Read(const MappingTypes mappingType, MappingsIndex& mappingsIndex);
+    bool Save(const CMapping& mapping, const int version);
+    bool Write(const MappingTypes mappingType, const MappingsIndex& mappingsIndex, const int version);
+    bool Read(const MappingTypes mappingType, MappingsIndex& mappingsIndex, const int version);
+
+private:
+    static constexpr KeyType makeKey(const MappingTypes mappingType, const int version);
+    static std::pair<MappingTypes, int> parseKey(const KeyType key);
 };
 
 // Define new map type to store Wagerr events.
@@ -453,10 +455,10 @@ public:
 
     static std::string GetDbName();
 
-    bool Save(const CPeerlessEvent& plEvent);
-    bool Erase(const CPeerlessResult& plEvent);
-    bool Write(const EventsIndex& eventsIndex);
-    bool Read(EventsIndex& eventsIndex);
+    bool Save(const CPeerlessEvent& plEvent, const int version);
+    bool Erase(const CPeerlessResult& plEvent, const int version);
+    bool Write(const EventsIndex& eventsIndex, const int version);
+    bool Read(EventsIndex& eventsIndex, const int version);
 };
 
 // Define new map type to store Wagerr results.
@@ -470,10 +472,10 @@ public:
 
     static std::string GetDbName();
 
-    bool Save(const CPeerlessResult& plResult);
-    bool Erase(const CPeerlessResult& plResult);
-    bool Write(const ResultsIndex& resultsIndex);
-    bool Read(ResultsIndex& resultsIndex);
+    bool Save(const CPeerlessResult& plResult, const int version);
+    bool Erase(const CPeerlessResult& plResult, const int version);
+    bool Write(const ResultsIndex& resultsIndex, const int version);
+    bool Read(ResultsIndex& resultsIndex, const int version);
 };
 
 /** Container for several db objects */
@@ -510,5 +512,8 @@ std::vector<CBetOut> GetBetPayouts(int height);
 std::vector<CBetOut> GetCGLottoBetPayouts(int height);
 
 void ParseBettingTx(const CTransaction& tx);
+
+/** Get the chain height **/
+int GetActiveChainHeight(const bool lockHeld = false);
 
 #endif // WAGERR_BET_H
