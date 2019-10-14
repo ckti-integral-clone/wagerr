@@ -933,7 +933,12 @@ constexpr std::size_t CBettingDB::dbWrapperCacheSize()
 
 constexpr CBettingDB::KeyType CBettingDB::makePrimaryKey(const int version)
 {
-    return static_cast<KeyType>(version) << sizeof(version) * 8;
+    return static_cast<KeyType>(version) << 32;
+}
+
+constexpr int CBettingDB::parsePrimaryKey(const KeyType key)
+{
+    return (key >> 32) & std::numeric_limits<std::uint32_t>::max();
 }
 
 /**
@@ -975,17 +980,14 @@ bool CMappingsDB::Write(const MappingTypes mappingType, const MappingsIndex& map
     std::unique_ptr<leveldb::Iterator> iterator{getDb().NewIterator()};
 
     for (iterator->SeekToFirst(); iterator->Valid(); iterator->Next()) {
-        KeyType recordKey{};
-        leveldb::Slice keySlice{iterator->key()};
-        CDataStream stream{keySlice.data(), keySlice.data() + keySlice.size(), SER_DISK, CLIENT_VERSION};
-        stream >> recordKey;
+        const auto recordKey{extractFromSlice<KeyType>(iterator->key())};
+        const auto complexKey{parseComplexKey(recordKey)};
 
-        const auto key{parseKey(recordKey)};
-        if (key.first == mappingType && key.second < limit) {
+        if (complexKey.first == mappingType && complexKey.second < limit) {
             batch.Erase(recordKey);
         }
     }
-    batch.Write(makeKey(mappingType, version), mappingsIndex);
+    batch.Write(makeComplexKey(mappingType, version), mappingsIndex);
 
     return getDb().WriteBatch(batch);
 }
@@ -1001,10 +1003,15 @@ bool CMappingsDB::Write(const MappingTypes mappingType, const MappingsIndex& map
 bool CMappingsDB::Read(const MappingTypes mappingType, MappingsIndex& mappingsIndex, const int version)
 {
     auto result{false};
+    const auto limit{version - Params().MaxReorganizationDepth()};
+    std::unique_ptr<leveldb::Iterator> iterator{getDb().NewIterator()};
 
-    for (int n{version - Params().MaxReorganizationDepth()}; n <= version; n++) {
-        MappingsIndex mi{};
-        if (getDb().Read(makeKey(mappingType, version), mi)) {
+    for (iterator->SeekToFirst(); iterator->Valid(); iterator->Next()) {
+        const auto recordKey{extractFromSlice<KeyType>(iterator->key())};
+        const auto complexKey{parseComplexKey(recordKey)};
+
+        if (complexKey.first == mappingType && complexKey.second >= limit) {
+            const auto mi{extractFromSlice<MappingsIndex>(iterator->value())};
             mappingsIndex.insert(mi.begin(), mi.end());
             result = true;
         }
@@ -1013,23 +1020,15 @@ bool CMappingsDB::Read(const MappingTypes mappingType, MappingsIndex& mappingsIn
     return result;
 }
 
-constexpr CBettingDB::KeyType CMappingsDB::makeKey(const MappingTypes mappingType, const int version)
+constexpr CBettingDB::KeyType CMappingsDB::makeComplexKey(const MappingTypes mappingType, const int version)
 {
     return makePrimaryKey(version) + static_cast<KeyType>(mappingType);
 }
 
-std::pair<MappingTypes, int> CMappingsDB::parseKey(const KeyType key)
+std::pair<MappingTypes, int> CMappingsDB::parseComplexKey(const KeyType key)
 {
-    union {
-      KeyType key;
-      struct {
-        int version;
-        MappingTypes type;
-      };
-    } splitter{};
-
-    splitter.key = key;
-    return std::make_pair(splitter.type, splitter.version);
+    const auto type{static_cast<MappingTypes>(key & std::numeric_limits<std::uint32_t>::max())};
+    return std::make_pair(type, parsePrimaryKey(key));
 }
 
 /**

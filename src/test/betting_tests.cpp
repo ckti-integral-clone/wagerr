@@ -36,9 +36,9 @@ BOOST_AUTO_TEST_CASE(betting_mappings_test)
 
     mapping.nId = 1;
     mapping.nMType = teamMapping;
-    mapping.sName = "Football";
+    mapping.sName = "Team1";
     mapping.nVersion = PROTOCOL_VERSION;
-    db.Save(mapping, version);
+    BOOST_CHECK(db.Save(mapping, version));
     BOOST_CHECK(db.Read(teamMapping, mappingsIndex, version));
     BOOST_CHECK_EQUAL(mappingsIndex.size(), 1);
     BOOST_CHECK_EQUAL(mappingsIndex.count(mapping.nId), 1);
@@ -54,56 +54,56 @@ BOOST_AUTO_TEST_CASE(betting_mappings_test)
 
     mapping.nId = 2;
     mapping.nMType = sportMapping;
-    mapping.sName = "Hockey";
+    mapping.sName = "Sport1";
     mapping.nVersion = PROTOCOL_VERSION;
-    db.Save(mapping, version);
+    BOOST_CHECK(db.Save(mapping, version));
     BOOST_CHECK(db.Read(teamMapping, mappingsIndex, version));
     BOOST_CHECK_EQUAL(mappingsIndex.size(), 1);
     BOOST_CHECK_EQUAL(mappingsIndex.count(mapping.nId), 0);
     BOOST_CHECK(db.Read(sportMapping, mappingsIndex, version));
-    BOOST_CHECK_EQUAL(mappingsIndex.size(), 1);
+    BOOST_CHECK_EQUAL(mappingsIndex.size(), 2);
     BOOST_CHECK_EQUAL(mappingsIndex.count(mapping.nId), 1);
     BOOST_CHECK(!db.Read(roundMapping, mappingsIndex, version));
-    BOOST_CHECK_EQUAL(mappingsIndex.size(), 1);
+    BOOST_CHECK_EQUAL(mappingsIndex.size(), 2);
     BOOST_CHECK_EQUAL(mappingsIndex.count(mapping.nId), 1);
     BOOST_CHECK(!db.Read(tournamentMapping, mappingsIndex, version));
-    BOOST_CHECK_EQUAL(mappingsIndex.size(), 1);
+    BOOST_CHECK_EQUAL(mappingsIndex.size(), 2);
     BOOST_CHECK_EQUAL(mappingsIndex.count(mapping.nId), 1);
 
     mapping.nId = 4;
     mapping.nMType = roundMapping;
-    mapping.sName = "Kickboxing";
+    mapping.sName = "Round1";
     mapping.nVersion = PROTOCOL_VERSION;
-    db.Save(mapping, version);
+    BOOST_CHECK(db.Save(mapping, version));
     BOOST_CHECK(db.Read(teamMapping, mappingsIndex, version));
-    BOOST_CHECK_EQUAL(mappingsIndex.size(), 1);
+    BOOST_CHECK_EQUAL(mappingsIndex.size(), 2);
     BOOST_CHECK_EQUAL(mappingsIndex.count(mapping.nId), 0);
     BOOST_CHECK(db.Read(sportMapping, mappingsIndex, version));
-    BOOST_CHECK_EQUAL(mappingsIndex.size(), 1);
+    BOOST_CHECK_EQUAL(mappingsIndex.size(), 2);
     BOOST_CHECK_EQUAL(mappingsIndex.count(mapping.nId), 0);
     BOOST_CHECK(db.Read(roundMapping, mappingsIndex, version));
-    BOOST_CHECK_EQUAL(mappingsIndex.size(), 1);
+    BOOST_CHECK_EQUAL(mappingsIndex.size(), 3);
     BOOST_CHECK_EQUAL(mappingsIndex.count(mapping.nId), 1);
     BOOST_CHECK(!db.Read(tournamentMapping, mappingsIndex, version));
-    BOOST_CHECK_EQUAL(mappingsIndex.size(), 1);
+    BOOST_CHECK_EQUAL(mappingsIndex.size(), 3);
     BOOST_CHECK_EQUAL(mappingsIndex.count(mapping.nId), 1);
 
     mapping.nId = 8;
     mapping.nMType = tournamentMapping;
-    mapping.sName = "MortalCombat";
+    mapping.sName = "Tournament1";
     mapping.nVersion = PROTOCOL_VERSION;
-    db.Save(mapping, version);
+    BOOST_CHECK(db.Save(mapping, version));
     BOOST_CHECK(db.Read(teamMapping, mappingsIndex, version));
-    BOOST_CHECK_EQUAL(mappingsIndex.size(), 1);
+    BOOST_CHECK_EQUAL(mappingsIndex.size(), 3);
     BOOST_CHECK_EQUAL(mappingsIndex.count(mapping.nId), 0);
     BOOST_CHECK(db.Read(sportMapping, mappingsIndex, version));
-    BOOST_CHECK_EQUAL(mappingsIndex.size(), 1);
+    BOOST_CHECK_EQUAL(mappingsIndex.size(), 3);
     BOOST_CHECK_EQUAL(mappingsIndex.count(mapping.nId), 0);
     BOOST_CHECK(db.Read(roundMapping, mappingsIndex, version));
-    BOOST_CHECK_EQUAL(mappingsIndex.size(), 1);
+    BOOST_CHECK_EQUAL(mappingsIndex.size(), 3);
     BOOST_CHECK_EQUAL(mappingsIndex.count(mapping.nId), 0);
     BOOST_CHECK(db.Read(tournamentMapping, mappingsIndex, version));
-    BOOST_CHECK_EQUAL(mappingsIndex.size(), 1);
+    BOOST_CHECK_EQUAL(mappingsIndex.size(), 4);
     BOOST_CHECK_EQUAL(mappingsIndex.count(mapping.nId), 1);
 }
 
@@ -118,14 +118,14 @@ BOOST_AUTO_TEST_CASE(betting_events_test)
     BOOST_CHECK(!db.Read(eventsIndex, version));
 
     plEvent.nEventId = 1;
-    db.Save(plEvent, version);
+    BOOST_CHECK(db.Save(plEvent, version));
     BOOST_CHECK(db.Read(eventsIndex, version));
     BOOST_CHECK(eventsIndex.size() == 1);
     BOOST_CHECK(eventsIndex.count(1) == 1);
 
     for (auto i = 2; i < 1000; i++) {
         plEvent.nEventId = i;
-        db.Save(plEvent, version);
+        BOOST_CHECK(db.Save(plEvent, version));
         BOOST_CHECK(db.Read(eventsIndex, version));
         BOOST_CHECK(eventsIndex.size() == i);
         BOOST_CHECK(eventsIndex.count(i) == 1);
@@ -143,7 +143,7 @@ BOOST_AUTO_TEST_CASE(betting_results_test)
     BOOST_CHECK(!db.Read(resultsIndex, version));
 
     plResult.nEventId = 1;
-    db.Save(plResult, version);
+    BOOST_CHECK(db.Save(plResult, version));
     BOOST_CHECK(db.Read(resultsIndex, version));
     BOOST_CHECK(resultsIndex.size() == 1);
     BOOST_CHECK(resultsIndex.count(1) == 1);
@@ -166,7 +166,7 @@ BOOST_AUTO_TEST_CASE(betting_dbcheck_test)
             BOOST_CHECK(!db.Read(eventsIndex, version));
             for (auto j{0}; j < nEventCount; j++) {
                 plEvent.nEventId = j;
-                db.Save(plEvent, version);
+                BOOST_CHECK(db.Save(plEvent, version));
             }
         } else {
             BOOST_CHECK(db.Read(eventsIndex, version));
@@ -195,7 +195,7 @@ BOOST_AUTO_TEST_CASE(betting_restorepoint_test)
             BOOST_CHECK(!db.Read(eventsIndex, version));
             for (auto j{0}; j < nEventCount; j++) {
                 plEvent.nEventId = j;
-                db.Save(plEvent, version);
+                BOOST_CHECK(db.Save(plEvent, version));
             }
         } else {
             BOOST_CHECK(db.Read(eventsIndex, version));

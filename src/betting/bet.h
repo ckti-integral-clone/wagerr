@@ -418,6 +418,21 @@ protected:
     CLevelDBWrapper & getDb();
     static constexpr std::size_t dbWrapperCacheSize();
     static constexpr KeyType makePrimaryKey(const int version);
+    static constexpr int parsePrimaryKey(const KeyType key);
+
+    template<typename T>
+    static void extractFromSlice(const leveldb::Slice& slice, T& data)
+    {
+        CDataStream{slice.data(), slice.data() + slice.size(), SER_DISK, CLIENT_VERSION} >> data;
+    }
+
+    template<typename T>
+    static T extractFromSlice(const leveldb::Slice& slice)
+    {
+        T result{};
+        extractFromSlice(slice, result);
+        return result;
+    }
 
 private:
     CLevelDBWrapper db;
@@ -440,8 +455,8 @@ public:
     bool Read(const MappingTypes mappingType, MappingsIndex& mappingsIndex, const int version);
 
 private:
-    static constexpr KeyType makeKey(const MappingTypes mappingType, const int version);
-    static std::pair<MappingTypes, int> parseKey(const KeyType key);
+    static constexpr KeyType makeComplexKey(const MappingTypes mappingType, const int version);
+    static std::pair<MappingTypes, int> parseComplexKey(const KeyType key);
 };
 
 // Define new map type to store Wagerr events.
