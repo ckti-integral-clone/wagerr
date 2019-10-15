@@ -434,6 +434,8 @@ protected:
         return result;
     }
 
+    void eraseAncientRecords(CLevelDBBatch& batch, const int currentVersion);
+
 private:
     CLevelDBWrapper db;
 

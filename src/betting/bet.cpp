@@ -941,6 +941,21 @@ constexpr int CBettingDB::parsePrimaryKey(const KeyType key)
     return (key >> 32) & std::numeric_limits<std::uint32_t>::max();
 }
 
+void CBettingDB::eraseAncientRecords(CLevelDBBatch& batch, const int currentVersion)
+{
+    const int versionLimit{currentVersion - Params().MaxReorganizationDepth()};
+    std::unique_ptr<leveldb::Iterator> iterator{getDb().NewIterator()};
+
+    for (iterator->SeekToFirst(); iterator->Valid(); iterator->Next()) {
+        const auto recordKey{extractFromSlice<KeyType>(iterator->key())};
+        const auto recordVersion{parsePrimaryKey(recordKey)};
+
+        if (recordVersion < versionLimit) {
+            batch.Erase(recordKey);
+        }
+    }
+}
+
 /**
  * Constructor for the CMapping database object.
  */
@@ -976,14 +991,14 @@ bool CMappingsDB::Save(const CMapping& mapping, const int version)
 bool CMappingsDB::Write(const MappingTypes mappingType, const MappingsIndex& mappingsIndex, const int version)
 {
     CLevelDBBatch batch{};
-    const int limit{version - Params().MaxReorganizationDepth()};
+    const int versionLimit{version - Params().MaxReorganizationDepth()};
     std::unique_ptr<leveldb::Iterator> iterator{getDb().NewIterator()};
 
     for (iterator->SeekToFirst(); iterator->Valid(); iterator->Next()) {
         const auto recordKey{extractFromSlice<KeyType>(iterator->key())};
         const auto complexKey{parseComplexKey(recordKey)};
 
-        if (complexKey.first == mappingType && complexKey.second < limit) {
+        if (complexKey.first == mappingType && complexKey.second < versionLimit) {
             batch.Erase(recordKey);
         }
     }
@@ -1003,14 +1018,14 @@ bool CMappingsDB::Write(const MappingTypes mappingType, const MappingsIndex& map
 bool CMappingsDB::Read(const MappingTypes mappingType, MappingsIndex& mappingsIndex, const int version)
 {
     auto result{false};
-    const auto limit{version - Params().MaxReorganizationDepth()};
+    const auto versionLimit{version - Params().MaxReorganizationDepth()};
     std::unique_ptr<leveldb::Iterator> iterator{getDb().NewIterator()};
 
     for (iterator->SeekToFirst(); iterator->Valid(); iterator->Next()) {
         const auto recordKey{extractFromSlice<KeyType>(iterator->key())};
         const auto complexKey{parseComplexKey(recordKey)};
 
-        if (complexKey.first == mappingType && complexKey.second >= limit) {
+        if (complexKey.first == mappingType && complexKey.second >= versionLimit) {
             const auto mi{extractFromSlice<MappingsIndex>(iterator->value())};
             mappingsIndex.insert(mi.begin(), mi.end());
             result = true;
@@ -1082,7 +1097,11 @@ bool CEventsDB::Erase(const CPeerlessResult& plEvent, const int version)
  */
 bool CEventsDB::Write(const EventsIndex& eventsIndex, const int version)
 {
-    return getDb().Write(makePrimaryKey(version), eventsIndex);
+    CLevelDBBatch batch{};
+    eraseAncientRecords(batch, version);
+    batch.Write(makePrimaryKey(version), eventsIndex);
+
+    return getDb().WriteBatch(batch);
 }
 
 /**
@@ -1094,7 +1113,22 @@ bool CEventsDB::Write(const EventsIndex& eventsIndex, const int version)
  */
 bool CEventsDB::Read(EventsIndex& eventsIndex, const int version)
 {
-    return getDb().Read(makePrimaryKey(version), eventsIndex);
+    auto result{false};
+    const auto versionLimit{version - Params().MaxReorganizationDepth()};
+    std::unique_ptr<leveldb::Iterator> iterator{getDb().NewIterator()};
+
+    for (iterator->SeekToFirst(); iterator->Valid(); iterator->Next()) {
+        const auto recordKey{extractFromSlice<KeyType>(iterator->key())};
+        const auto recordVersion{parsePrimaryKey(recordKey)};
+
+        if (recordVersion >= versionLimit) {
+            const auto ei{extractFromSlice<EventsIndex>(iterator->value())};
+            eventsIndex.insert(ei.begin(), ei.end());
+            result = true;
+        }
+    }
+
+    return result;
 }
 
 /**
@@ -1148,7 +1182,11 @@ bool CResultsDB::Erase(const CPeerlessResult& plResult, const int version)
  */
 bool CResultsDB::Write(const ResultsIndex& resultsIndex, const int version)
 {
-    return getDb().Write(makePrimaryKey(version), resultsIndex);
+    CLevelDBBatch batch{};
+    eraseAncientRecords(batch, version);
+    batch.Write(makePrimaryKey(version), resultsIndex);
+
+    return getDb().WriteBatch(batch);
 }
 
 /**
@@ -1160,7 +1198,22 @@ bool CResultsDB::Write(const ResultsIndex& resultsIndex, const int version)
  */
 bool CResultsDB::Read(ResultsIndex& resultsIndex, const int version)
 {
-    return getDb().Read(makePrimaryKey(version), resultsIndex);
+    auto result{false};
+    const auto versionLimit{version - Params().MaxReorganizationDepth()};
+    std::unique_ptr<leveldb::Iterator> iterator{getDb().NewIterator()};
+
+    for (iterator->SeekToFirst(); iterator->Valid(); iterator->Next()) {
+        const auto recordKey{extractFromSlice<KeyType>(iterator->key())};
+        const auto recordVersion{parsePrimaryKey(recordKey)};
+
+        if (recordVersion >= versionLimit) {
+            const auto ei{extractFromSlice<ResultsIndex>(iterator->value())};
+            resultsIndex.insert(ei.begin(), ei.end());
+            result = true;
+        }
+    }
+
+    return result;
 }
 
 /**
