@@ -15,40 +15,43 @@
 #include <boost/test/unit_test.hpp>
 #include <boost/filesystem/operations.hpp>
 
+static constexpr auto nMassRecordCount{333};
+
 BOOST_FIXTURE_TEST_SUITE(betting_tests, TestingSetup)
+
 
 BOOST_AUTO_TEST_CASE(betting_mappings_test)
 {
     boost::filesystem::remove_all(CMappingsDB::GetDbName());
-    int version{0};
+    int blockHeight{0};
     CMapping mapping{};
     CMappingsDB db{};
     MappingsIndex mappingsIndex{};
 
-    BOOST_CHECK(!db.Read(teamMapping, mappingsIndex, version));
+    BOOST_CHECK(!db.Read(teamMapping, mappingsIndex, blockHeight));
     BOOST_CHECK(mappingsIndex.size() == 0);
-    BOOST_CHECK(!db.Read(sportMapping, mappingsIndex, version));
+    BOOST_CHECK(!db.Read(sportMapping, mappingsIndex, blockHeight));
     BOOST_CHECK(mappingsIndex.size() == 0);
-    BOOST_CHECK(!db.Read(roundMapping, mappingsIndex, version));
+    BOOST_CHECK(!db.Read(roundMapping, mappingsIndex, blockHeight));
     BOOST_CHECK(mappingsIndex.size() == 0);
-    BOOST_CHECK(!db.Read(tournamentMapping, mappingsIndex, version));
+    BOOST_CHECK(!db.Read(tournamentMapping, mappingsIndex, blockHeight));
     BOOST_CHECK(mappingsIndex.size() == 0);
 
     mapping.nId = 1;
     mapping.nMType = teamMapping;
     mapping.sName = "Team1";
     mapping.nVersion = PROTOCOL_VERSION;
-    BOOST_CHECK(db.Save(mapping, version));
-    BOOST_CHECK(db.Read(teamMapping, mappingsIndex, version));
+    BOOST_CHECK(db.Save(mapping, blockHeight));
+    BOOST_CHECK(db.Read(teamMapping, mappingsIndex, blockHeight));
     BOOST_CHECK_EQUAL(mappingsIndex.size(), 1);
     BOOST_CHECK_EQUAL(mappingsIndex.count(mapping.nId), 1);
-    BOOST_CHECK(!db.Read(sportMapping, mappingsIndex, version));
+    BOOST_CHECK(!db.Read(sportMapping, mappingsIndex, blockHeight));
     BOOST_CHECK_EQUAL(mappingsIndex.size(), 1);
     BOOST_CHECK_EQUAL(mappingsIndex.count(mapping.nId), 1);
-    BOOST_CHECK(!db.Read(roundMapping, mappingsIndex, version));
+    BOOST_CHECK(!db.Read(roundMapping, mappingsIndex, blockHeight));
     BOOST_CHECK_EQUAL(mappingsIndex.size(), 1);
     BOOST_CHECK_EQUAL(mappingsIndex.count(mapping.nId), 1);
-    BOOST_CHECK(!db.Read(tournamentMapping, mappingsIndex, version));
+    BOOST_CHECK(!db.Read(tournamentMapping, mappingsIndex, blockHeight));
     BOOST_CHECK_EQUAL(mappingsIndex.size(), 1);
     BOOST_CHECK_EQUAL(mappingsIndex.count(mapping.nId), 1);
 
@@ -56,17 +59,17 @@ BOOST_AUTO_TEST_CASE(betting_mappings_test)
     mapping.nMType = sportMapping;
     mapping.sName = "Sport1";
     mapping.nVersion = PROTOCOL_VERSION;
-    BOOST_CHECK(db.Save(mapping, version));
-    BOOST_CHECK(db.Read(teamMapping, mappingsIndex, version));
+    BOOST_CHECK(db.Save(mapping, blockHeight));
+    BOOST_CHECK(db.Read(teamMapping, mappingsIndex, blockHeight));
     BOOST_CHECK_EQUAL(mappingsIndex.size(), 1);
     BOOST_CHECK_EQUAL(mappingsIndex.count(mapping.nId), 0);
-    BOOST_CHECK(db.Read(sportMapping, mappingsIndex, version));
+    BOOST_CHECK(db.Read(sportMapping, mappingsIndex, blockHeight));
     BOOST_CHECK_EQUAL(mappingsIndex.size(), 2);
     BOOST_CHECK_EQUAL(mappingsIndex.count(mapping.nId), 1);
-    BOOST_CHECK(!db.Read(roundMapping, mappingsIndex, version));
+    BOOST_CHECK(!db.Read(roundMapping, mappingsIndex, blockHeight));
     BOOST_CHECK_EQUAL(mappingsIndex.size(), 2);
     BOOST_CHECK_EQUAL(mappingsIndex.count(mapping.nId), 1);
-    BOOST_CHECK(!db.Read(tournamentMapping, mappingsIndex, version));
+    BOOST_CHECK(!db.Read(tournamentMapping, mappingsIndex, blockHeight));
     BOOST_CHECK_EQUAL(mappingsIndex.size(), 2);
     BOOST_CHECK_EQUAL(mappingsIndex.count(mapping.nId), 1);
 
@@ -74,17 +77,17 @@ BOOST_AUTO_TEST_CASE(betting_mappings_test)
     mapping.nMType = roundMapping;
     mapping.sName = "Round1";
     mapping.nVersion = PROTOCOL_VERSION;
-    BOOST_CHECK(db.Save(mapping, version));
-    BOOST_CHECK(db.Read(teamMapping, mappingsIndex, version));
+    BOOST_CHECK(db.Save(mapping, blockHeight));
+    BOOST_CHECK(db.Read(teamMapping, mappingsIndex, blockHeight));
     BOOST_CHECK_EQUAL(mappingsIndex.size(), 2);
     BOOST_CHECK_EQUAL(mappingsIndex.count(mapping.nId), 0);
-    BOOST_CHECK(db.Read(sportMapping, mappingsIndex, version));
+    BOOST_CHECK(db.Read(sportMapping, mappingsIndex, blockHeight));
     BOOST_CHECK_EQUAL(mappingsIndex.size(), 2);
     BOOST_CHECK_EQUAL(mappingsIndex.count(mapping.nId), 0);
-    BOOST_CHECK(db.Read(roundMapping, mappingsIndex, version));
+    BOOST_CHECK(db.Read(roundMapping, mappingsIndex, blockHeight));
     BOOST_CHECK_EQUAL(mappingsIndex.size(), 3);
     BOOST_CHECK_EQUAL(mappingsIndex.count(mapping.nId), 1);
-    BOOST_CHECK(!db.Read(tournamentMapping, mappingsIndex, version));
+    BOOST_CHECK(!db.Read(tournamentMapping, mappingsIndex, blockHeight));
     BOOST_CHECK_EQUAL(mappingsIndex.size(), 3);
     BOOST_CHECK_EQUAL(mappingsIndex.count(mapping.nId), 1);
 
@@ -92,17 +95,17 @@ BOOST_AUTO_TEST_CASE(betting_mappings_test)
     mapping.nMType = tournamentMapping;
     mapping.sName = "Tournament1";
     mapping.nVersion = PROTOCOL_VERSION;
-    BOOST_CHECK(db.Save(mapping, version));
-    BOOST_CHECK(db.Read(teamMapping, mappingsIndex, version));
+    BOOST_CHECK(db.Save(mapping, blockHeight));
+    BOOST_CHECK(db.Read(teamMapping, mappingsIndex, blockHeight));
     BOOST_CHECK_EQUAL(mappingsIndex.size(), 3);
     BOOST_CHECK_EQUAL(mappingsIndex.count(mapping.nId), 0);
-    BOOST_CHECK(db.Read(sportMapping, mappingsIndex, version));
+    BOOST_CHECK(db.Read(sportMapping, mappingsIndex, blockHeight));
     BOOST_CHECK_EQUAL(mappingsIndex.size(), 3);
     BOOST_CHECK_EQUAL(mappingsIndex.count(mapping.nId), 0);
-    BOOST_CHECK(db.Read(roundMapping, mappingsIndex, version));
+    BOOST_CHECK(db.Read(roundMapping, mappingsIndex, blockHeight));
     BOOST_CHECK_EQUAL(mappingsIndex.size(), 3);
     BOOST_CHECK_EQUAL(mappingsIndex.count(mapping.nId), 0);
-    BOOST_CHECK(db.Read(tournamentMapping, mappingsIndex, version));
+    BOOST_CHECK(db.Read(tournamentMapping, mappingsIndex, blockHeight));
     BOOST_CHECK_EQUAL(mappingsIndex.size(), 4);
     BOOST_CHECK_EQUAL(mappingsIndex.count(mapping.nId), 1);
 }
@@ -110,51 +113,84 @@ BOOST_AUTO_TEST_CASE(betting_mappings_test)
 BOOST_AUTO_TEST_CASE(betting_events_test)
 {
     boost::filesystem::remove_all(CEventsDB::GetDbName());
-    int version{0};
+    int blockHeight{0};
     CEventsDB db{};
     EventsIndex eventsIndex{};
     CPeerlessEvent plEvent{};
 
-    BOOST_CHECK(!db.Read(eventsIndex, version));
+    BOOST_CHECK(!db.Read(eventsIndex, blockHeight));
 
     plEvent.nEventId = 1;
-    BOOST_CHECK(db.Save(plEvent, version));
-    BOOST_CHECK(db.Read(eventsIndex, version));
+    BOOST_CHECK(db.Save(plEvent, blockHeight));
+    BOOST_CHECK(db.Read(eventsIndex, blockHeight));
     BOOST_CHECK(eventsIndex.size() == 1);
     BOOST_CHECK(eventsIndex.count(1) == 1);
-
-    for (auto i = 2; i < 1000; i++) {
-        plEvent.nEventId = i;
-        BOOST_CHECK(db.Save(plEvent, version));
-        BOOST_CHECK(db.Read(eventsIndex, version));
-        BOOST_CHECK(eventsIndex.size() == i);
-        BOOST_CHECK(eventsIndex.count(i) == 1);
-    }
 }
 
 BOOST_AUTO_TEST_CASE(betting_results_test)
 {
     boost::filesystem::remove_all(CResultsDB::GetDbName());
-    int version{0};
+    int blockHeight{0};
     CResultsDB db{};
     ResultsIndex resultsIndex{};
     CPeerlessResult plResult{};
 
-    BOOST_CHECK(!db.Read(resultsIndex, version));
+    BOOST_CHECK(!db.Read(resultsIndex, blockHeight));
 
     plResult.nEventId = 1;
-    BOOST_CHECK(db.Save(plResult, version));
-    BOOST_CHECK(db.Read(resultsIndex, version));
+    BOOST_CHECK(db.Save(plResult, blockHeight));
+    BOOST_CHECK(db.Read(resultsIndex, blockHeight));
     BOOST_CHECK(resultsIndex.size() == 1);
     BOOST_CHECK(resultsIndex.count(1) == 1);
 }
 
-BOOST_AUTO_TEST_CASE(betting_dbcheck_test)
+BOOST_AUTO_TEST_CASE(betting_massmappings_test)
+{
+    boost::filesystem::remove_all(CEventsDB::GetDbName());
+    std::srand(std::time(nullptr));
+    int nMappingCount{0};
+    int blockHeight{0};
+
+    for (auto i{0}; i < 2; i++) {
+        CMappingsDB db{};
+        CMapping mapping{};
+        MappingsIndex mappingsIndex{};
+
+        if (i == 0) {
+            nMappingCount = nMassRecordCount + std::rand() % nMassRecordCount;
+            for (auto j{static_cast<int>(sportMapping)}; j <= tournamentMapping; j++) {
+                const auto mappingType{static_cast<MappingTypes>(j)};
+                BOOST_CHECK(!db.Read(mappingType, mappingsIndex, blockHeight));
+                for (auto k{0}; k < nMappingCount; k++) {
+                    mapping.nId = k;
+                    mapping.nMType = mappingType;
+                    mapping.nVersion = PROTOCOL_VERSION;
+                    BOOST_CHECK(db.Save(mapping, blockHeight));
+                }
+            }
+
+        } else {
+            for (auto j{static_cast<int>(sportMapping)}; j <= tournamentMapping; j++) {
+                const auto mappingType{static_cast<MappingTypes>(j)};
+                mappingsIndex.clear();
+                for (auto k{0}; k < nMappingCount; k++) {
+                    BOOST_CHECK(db.Read(mappingType, mappingsIndex, blockHeight));
+                    BOOST_CHECK(mappingsIndex.count(k) == 1);
+                    BOOST_CHECK(mappingsIndex[k].nId == k);
+                    BOOST_CHECK(mappingsIndex[k].nMType == mappingType);
+                    BOOST_CHECK(mappingsIndex[k].nVersion == PROTOCOL_VERSION);
+                }
+            }
+        }
+    }
+}
+
+BOOST_AUTO_TEST_CASE(betting_massevents_test)
 {
     boost::filesystem::remove_all(CEventsDB::GetDbName());
     std::srand(std::time(nullptr));
     int nEventCount{0};
-    int version{0};
+    int blockHeight{0};
 
     for (auto i{0}; i < 2; i++) {
         CEventsDB db{};
@@ -162,118 +198,158 @@ BOOST_AUTO_TEST_CASE(betting_dbcheck_test)
         EventsIndex eventsIndex{};
 
         if (i == 0) {
-            nEventCount = 1000 + std::rand() % 1000;
-            BOOST_CHECK(!db.Read(eventsIndex, version));
+            nEventCount = nMassRecordCount + std::rand() % nMassRecordCount;
+            BOOST_CHECK(!db.Read(eventsIndex, blockHeight));
             for (auto j{0}; j < nEventCount; j++) {
                 plEvent.nEventId = j;
-                BOOST_CHECK(db.Save(plEvent, version));
+                plEvent.nVersion = PROTOCOL_VERSION;
+                BOOST_CHECK(db.Save(plEvent, blockHeight));
             }
         } else {
-            BOOST_CHECK(db.Read(eventsIndex, version));
+            BOOST_CHECK(db.Read(eventsIndex, blockHeight));
             for (auto j{0}; j < nEventCount; j++) {
                 BOOST_CHECK(eventsIndex.count(j) == 1);
                 BOOST_CHECK(eventsIndex[j].nEventId == j);
+                BOOST_CHECK(eventsIndex[j].nVersion == PROTOCOL_VERSION);
             }
         }
     }
 }
 
-BOOST_AUTO_TEST_CASE(betting_restorepoint_test)
+BOOST_AUTO_TEST_CASE(betting_massresults_test)
 {
     boost::filesystem::remove_all(CEventsDB::GetDbName());
     std::srand(std::time(nullptr));
-    int nEventCount{0};
-    int version{0};
+    int nResultCount{0};
+    int blockHeight{0};
 
     for (auto i{0}; i < 2; i++) {
-        CEventsDB db{};
-        CPeerlessEvent plEvent{};
-        EventsIndex eventsIndex{};
+        CResultsDB db{};
+        CPeerlessResult plResult{};
+        ResultsIndex resultsIndex{};
 
         if (i == 0) {
-            nEventCount = 1000 + std::rand() % 1000;
-            BOOST_CHECK(!db.Read(eventsIndex, version));
-            for (auto j{0}; j < nEventCount; j++) {
-                plEvent.nEventId = j;
-                BOOST_CHECK(db.Save(plEvent, version));
+            nResultCount = nMassRecordCount + std::rand() % nMassRecordCount;
+            BOOST_CHECK(!db.Read(resultsIndex, blockHeight));
+            for (auto j{0}; j < nResultCount; j++) {
+                plResult.nEventId = j;
+                plResult.nVersion = PROTOCOL_VERSION;
+                BOOST_CHECK(db.Save(plResult, blockHeight));
             }
         } else {
-            BOOST_CHECK(db.Read(eventsIndex, version));
-            for (auto j{0}; j < nEventCount; j++) {
-                BOOST_CHECK(eventsIndex.count(j) == 1);
-                BOOST_CHECK(eventsIndex[j].nEventId == j);
+            BOOST_CHECK(db.Read(resultsIndex, blockHeight));
+            for (auto j{0}; j < nResultCount; j++) {
+                BOOST_CHECK(resultsIndex.count(j) == 1);
+                BOOST_CHECK(resultsIndex[j].nEventId == j);
+                BOOST_CHECK(resultsIndex[j].nVersion == PROTOCOL_VERSION);
             }
         }
     }
 }
 
-/*BOOST_AUTO_TEST_CASE(betting_crash_test)
+BOOST_AUTO_TEST_CASE(betting_massall_test)
 {
-    const std::string envFlag{"WAGGER_UNIT_TEST_BETTING_CRASH"};
+    boost::filesystem::remove_all(CEventsDB::GetDbName());
 
-//    for (auto i{0}; i < 40; i++) {
-//        const char c{static_cast<char>(1.0 * ('z' - 'a') * std::rand() / RAND_MAX)};
-//        envFlag.append(1, c + 'a');
-//    }
+    CMappingsDB mdb{};
+    CEventsDB edb{};
+    CResultsDB rdb{};
+    CMapping mapping{};
+    CPeerlessEvent plEvent{};
+    CPeerlessResult plResult{};
+    MappingsIndex mappingsIndex{};
+    EventsIndex eventsIndex{};
+    ResultsIndex resultsIndex{};
 
-    if (std::getenv(envFlag.c_str()) == nullptr) {
-        std::string cmdline{"env "};
-//        const std::string flagFile{};
-        cmdline.append(envFlag);
-        cmdline.append("=1 ");
-//        cmdline.append(1, '=');
-//        cmdline.append(flagFile);
-//        cmdline.append(1, ' ');
-        cmdline.append(boost::unit_test::framework::master_test_suite().argv[0]);
-//        cmdline.append(1, ' ');
-        cmdline.append(" --run_test=betting_tests");
-//        boost::filesystem::ofstream(boost::filesystem::path(flagFile));
-        boost::filesystem::remove_all(CEventsDB::GetDbName());
-        runCommand(cmdline);
-
-        CEventsDB db{};
-        EventsIndex eventsIndex{};
-        CPeerlessEvent plEvent{};
-        BOOST_CHECK(db.Read(eventsIndex));
-        BOOST_CHECK(eventsIndex.size() > 0);
-        BOOST_CHECK(eventsIndex.size() < 1000);
-        for (const auto& pair : eventsIndex) {
-            BOOST_CHECK(pair.first < 1000);
-            BOOST_CHECK(pair.first == pair.second.nEventId);
+    for (auto i{0}; i < nMassRecordCount; i++) {
+        for (auto j{static_cast<int>(sportMapping)}; j <= tournamentMapping; j++) {
+            BOOST_CHECK(!mdb.Read(static_cast<MappingTypes>(j), mappingsIndex, i));
         }
-        BOOST_TEST_MESSAGE("Fork Complete");
-    } else {
-        BOOST_TEST_MESSAGE("Running Fork");
-        CEventsDB db{};
-        EventsIndex eventsIndex{};
-        CPeerlessEvent plEvent{};
-        BOOST_TEST_MESSAGE("Reading DB");
-        BOOST_CHECK(!db.Read(eventsIndex));
-        std::srand(std::time(nullptr));
-        BOOST_TEST_MESSAGE("Writing DB");
-        for (auto i = 0; i < 1000; i++) {
-            plEvent.nEventId = i;
-            db.Save(plEvent);
-            if (i > std::rand() % 333 + 666) {
-                int* p = nullptr;
-                *p = 42;
-            }
-        }
+        BOOST_CHECK(!edb.Read(eventsIndex, i));
+        BOOST_CHECK(!rdb.Read(resultsIndex, i));
     }
 
-//    std::thread thread{[]() {
-//            CEventsDB db{};
-//            EventsIndex eventsIndex{};
-//            CPeerlessEvent plEvent{};
+    for (auto i{0}; i < nMassRecordCount; i++) {
+        mapping.nId = i;
+        mapping.nVersion = PROTOCOL_VERSION;
+        plEvent.nEventId = i;
+        plEvent.nVersion = PROTOCOL_VERSION;
+        plResult.nEventId = i;
+        plResult.nVersion = PROTOCOL_VERSION;
 
-//            BOOST_CHECK(!db.Read(eventsIndex));
+        for (auto j{static_cast<int>(sportMapping)}; j <= tournamentMapping; j++) {
+            mapping.nMType = static_cast<MappingTypes>(j);
+            BOOST_CHECK(mdb.Save(mapping, i));
+        }
 
-//            for (auto i = 1; i < 100; i++) {
-//                plEvent.nEventId = i;
-//                db.Save(plEvent);
-//            }
-//    }};
-//    thread.join();
-}*/
+        BOOST_CHECK(edb.Save(plEvent, i));
+        BOOST_CHECK(rdb.Save(plResult, i));
+    }
+
+    for (auto i{0}; i < nMassRecordCount; i++) {
+        for (auto j{static_cast<int>(sportMapping)}; j <= tournamentMapping; j++) {
+            BOOST_CHECK(mdb.Read(static_cast<MappingTypes>(j), mappingsIndex, i));
+            BOOST_CHECK_EQUAL(mappingsIndex.size(), nMassRecordCount);
+            BOOST_CHECK_EQUAL(mappingsIndex.count(i), 1);
+        }
+
+        BOOST_CHECK(edb.Read(eventsIndex, i));
+        BOOST_CHECK(eventsIndex.size() == nMassRecordCount);
+        BOOST_CHECK(eventsIndex.count(i) == 1);
+
+        BOOST_CHECK(rdb.Read(resultsIndex, i));
+        BOOST_CHECK(resultsIndex.size() == nMassRecordCount);
+        BOOST_CHECK(resultsIndex.count(i) == 1);
+    }
+}
+
+
+BOOST_AUTO_TEST_CASE(betting_blockheight_test)
+{
+    boost::filesystem::remove_all(CEventsDB::GetDbName());
+
+    CMappingsDB mdb{};
+    CEventsDB edb{};
+    CResultsDB rdb{};
+    CMapping mapping{};
+    CPeerlessEvent plEvent{};
+    CPeerlessResult plResult{};
+    MappingsIndex mappingsIndex{};
+    EventsIndex eventsIndex{};
+    ResultsIndex resultsIndex{};
+    int blockHeight{nMassRecordCount};
+
+    mapping.nId = 11;
+    mapping.nVersion = PROTOCOL_VERSION;
+    plEvent.nEventId = 42;
+    plEvent.nVersion = PROTOCOL_VERSION;
+    plResult.nEventId = 42;
+    plResult.nVersion = PROTOCOL_VERSION;
+
+    for (auto i{0}; i < nMassRecordCount; i++) {
+        for (auto j{static_cast<int>(sportMapping)}; j <= tournamentMapping; j++) {
+            mapping.nMType = static_cast<MappingTypes>(j);
+            BOOST_CHECK(mdb.Save(mapping, i));
+        }
+        BOOST_CHECK(edb.Save(plEvent, i));
+        BOOST_CHECK(rdb.Save(plResult, i));
+    }
+
+    for (auto i{0}; i < nMassRecordCount; i++) {
+        for (auto j{static_cast<int>(sportMapping)}; j <= tournamentMapping; j++) {
+            BOOST_CHECK(mdb.Read(static_cast<MappingTypes>(j), mappingsIndex, i));
+            BOOST_CHECK_EQUAL(mappingsIndex.size(), 1);
+            BOOST_CHECK_EQUAL(mappingsIndex.count(11), 1);
+        }
+
+        BOOST_CHECK(edb.Read(eventsIndex, i));
+        BOOST_CHECK(eventsIndex.size() == 1);
+        BOOST_CHECK(eventsIndex.count(42) == 1);
+
+        BOOST_CHECK(rdb.Read(resultsIndex, i));
+        BOOST_CHECK(resultsIndex.size() == 1);
+        BOOST_CHECK(resultsIndex.count(42) == 1);
+    }
+}
 
 BOOST_AUTO_TEST_SUITE_END()
