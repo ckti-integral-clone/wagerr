@@ -905,21 +905,12 @@ CBettingDB::CBettingDB(std::string dbName, std::size_t cacheSize, bool fWipe) :
 {
 }
 
-//bool CBettingDB::AdvanceRestorePoint(const uint256& lastBlockHash)
-//{
-//    return getDb().Write(restorePointKey(), lastBlockHash);
-//}
-
-//bool CBettingDB::RestoreToPoint(const uint256& bestBlockHash)
-//{
-//    uint256 lastBlockHash{};
-//    if (!getDb().Read(restorePointKey(), lastBlockHash)) {
-//        return getDb().Write(checkPointKey(), bestBlockHash) &&
-//               getDb().Read(checkPointKey(), lastBlockHash) &&
-//               lastBlockHash == bestBlockHash;
-//    }
-//    return bestBlockHash == lastBlockHash;
-//}
+bool CBettingDB::RemoveRecord(const int blockHeight)
+{
+    CLevelDBBatch batch{};
+    eraseRecords(batch, blockHeight, std::greater_equal<int>());
+    return getDb().WriteBatch(batch);
+}
 
 CLevelDBWrapper& CBettingDB::getDb()
 {
@@ -931,9 +922,9 @@ constexpr std::size_t CBettingDB::dbWrapperCacheSize()
     return 10 << 20;
 }
 
-constexpr CBettingDB::KeyType CBettingDB::makePrimaryKey(const int version)
+constexpr CBettingDB::KeyType CBettingDB::makePrimaryKey(const int blockHeight)
 {
-    return static_cast<KeyType>(version) << 32;
+    return static_cast<KeyType>(blockHeight) << 32;
 }
 
 constexpr int CBettingDB::parsePrimaryKey(const KeyType key)
@@ -941,17 +932,16 @@ constexpr int CBettingDB::parsePrimaryKey(const KeyType key)
     return (key >> 32) & std::numeric_limits<std::uint32_t>::max();
 }
 
-void CBettingDB::eraseAncientRecords(CLevelDBBatch& batch, const int currentVersion)
+void CBettingDB::eraseRecords(CLevelDBBatch& batch, const int blockHeight, EraseComparator comparator)
 {
-    const int versionLimit{currentVersion - Params().MaxReorganizationDepth()};
     std::unique_ptr<leveldb::Iterator> iterator{getDb().NewIterator()};
 
     for (iterator->SeekToFirst(); iterator->Valid(); iterator->Next()) {
-        const auto recordKey{extractFromSlice<KeyType>(iterator->key())};
-        const auto recordVersion{parsePrimaryKey(recordKey)};
+        const auto key{extractFromSlice<KeyType>(iterator->key())};
+        const auto version{parsePrimaryKey(key)};
 
-        if (recordVersion < versionLimit) {
-            batch.Erase(recordKey);
+        if (comparator(version, blockHeight)) {
+            batch.Erase(key);
         }
     }
 }
@@ -969,15 +959,15 @@ std::string CMappingsDB::GetDbName()
     return MakeDbPath("mappings");
 }
 
-bool CMappingsDB::Save(const CMapping& mapping, const int version)
+bool CMappingsDB::Save(const CMapping& mapping, const int blockHeight)
 {
     MappingsIndex mappingIndex{};
 
-    if (!Read(mapping.GetType(), mappingIndex, version)) {
+    if (!Read(mapping.GetType(), mappingIndex, blockHeight)) {
         mappingIndex.clear();
     }
     mappingIndex[mapping.nId] = mapping;
-    return Write(mapping.GetType(), mappingIndex, version);
+    return Write(mapping.GetType(), mappingIndex, blockHeight);
 }
 
 /**
@@ -988,21 +978,21 @@ bool CMappingsDB::Save(const CMapping& mapping, const int version)
  * @param mappingIndex    The index map which contains Wagerr mappings.
  * @return                Bool
  */
-bool CMappingsDB::Write(const MappingTypes mappingType, const MappingsIndex& mappingsIndex, const int version)
+bool CMappingsDB::Write(const MappingTypes mappingType, const MappingsIndex& mappingsIndex, const int blockHeight)
 {
     CLevelDBBatch batch{};
-    const int versionLimit{version - Params().MaxReorganizationDepth()};
+    const int heightLimit{blockHeight - Params().MaxReorganizationDepth()};
     std::unique_ptr<leveldb::Iterator> iterator{getDb().NewIterator()};
 
     for (iterator->SeekToFirst(); iterator->Valid(); iterator->Next()) {
         const auto recordKey{extractFromSlice<KeyType>(iterator->key())};
         const auto complexKey{parseComplexKey(recordKey)};
 
-        if (complexKey.first == mappingType && complexKey.second < versionLimit) {
+        if (complexKey.first == mappingType && complexKey.second < heightLimit) {
             batch.Erase(recordKey);
         }
     }
-    batch.Write(makeComplexKey(mappingType, version), mappingsIndex);
+    batch.Write(makeComplexKey(mappingType, blockHeight), mappingsIndex);
 
     return getDb().WriteBatch(batch);
 }
@@ -1015,17 +1005,17 @@ bool CMappingsDB::Write(const MappingTypes mappingType, const MappingsIndex& map
 * @param mappingIndex    The index map which contains Wagerr mappings.
 * @return                Bool
 */
-bool CMappingsDB::Read(const MappingTypes mappingType, MappingsIndex& mappingsIndex, const int version)
+bool CMappingsDB::Read(const MappingTypes mappingType, MappingsIndex& mappingsIndex, const int blockHeight)
 {
     auto result{false};
-    const auto versionLimit{version - Params().MaxReorganizationDepth()};
+    const auto heightLimit{blockHeight - Params().MaxReorganizationDepth()};
     std::unique_ptr<leveldb::Iterator> iterator{getDb().NewIterator()};
 
     for (iterator->SeekToFirst(); iterator->Valid(); iterator->Next()) {
         const auto recordKey{extractFromSlice<KeyType>(iterator->key())};
         const auto complexKey{parseComplexKey(recordKey)};
 
-        if (complexKey.first == mappingType && complexKey.second >= versionLimit) {
+        if (complexKey.first == mappingType && complexKey.second >= heightLimit) {
             const auto mi{extractFromSlice<MappingsIndex>(iterator->value())};
             mappingsIndex.insert(mi.begin(), mi.end());
             result = true;
@@ -1035,9 +1025,9 @@ bool CMappingsDB::Read(const MappingTypes mappingType, MappingsIndex& mappingsIn
     return result;
 }
 
-constexpr CBettingDB::KeyType CMappingsDB::makeComplexKey(const MappingTypes mappingType, const int version)
+constexpr CBettingDB::KeyType CMappingsDB::makeComplexKey(const MappingTypes mappingType, const int blockHeight)
 {
-    return makePrimaryKey(version) + static_cast<KeyType>(mappingType);
+    return makePrimaryKey(blockHeight) + static_cast<KeyType>(mappingType);
 }
 
 std::pair<MappingTypes, int> CMappingsDB::parseComplexKey(const KeyType key)
@@ -1064,14 +1054,14 @@ std::string CEventsDB::GetDbName()
  *
  * @param pe CPeerless Event object.
  */
-bool CEventsDB::Save(const CPeerlessEvent& plEvent, const int version)
+bool CEventsDB::Save(const CPeerlessEvent& plEvent, const int blockHeight)
 {
     EventsIndex eventIndex{};
-    if (!Read(eventIndex, version)) {
+    if (!Read(eventIndex, blockHeight)) {
         eventIndex.clear();
     }
     eventIndex[plEvent.nEventId] = plEvent;
-    return Write(eventIndex, version);
+    return Write(eventIndex, blockHeight);
 }
 
 /**
@@ -1079,12 +1069,12 @@ bool CEventsDB::Save(const CPeerlessEvent& plEvent, const int version)
  *
  * @param eventId
  */
-bool CEventsDB::Erase(const CPeerlessResult& plEvent, const int version)
+bool CEventsDB::Erase(const CPeerlessEvent& plEvent, const int blockHeight)
 {
     EventsIndex eventIndex{};
-    if (Read(eventIndex, version)) {
+    if (Read(eventIndex, blockHeight)) {
         eventIndex.erase(plEvent.nEventId);
-        return Write(eventIndex, version);
+        return Write(eventIndex, blockHeight);
     }
     return false;
 }
@@ -1095,11 +1085,11 @@ bool CEventsDB::Erase(const CPeerlessResult& plEvent, const int version)
  * @param eventIndex       The events index map which contains the current live events.
  * @return                 Bool
  */
-bool CEventsDB::Write(const EventsIndex& eventsIndex, const int version)
+bool CEventsDB::Write(const EventsIndex& eventsIndex, const int blockHeight)
 {
     CLevelDBBatch batch{};
-    eraseAncientRecords(batch, version);
-    batch.Write(makePrimaryKey(version), eventsIndex);
+    eraseRecords(batch, blockHeight - Params().MaxReorganizationDepth(), std::less<int>());
+    batch.Write(makePrimaryKey(blockHeight), eventsIndex);
 
     return getDb().WriteBatch(batch);
 }
@@ -1111,17 +1101,17 @@ bool CEventsDB::Write(const EventsIndex& eventsIndex, const int version)
  * @param eventIndex The event index map which will be populated with data from the file.
  * @return           Bool
  */
-bool CEventsDB::Read(EventsIndex& eventsIndex, const int version)
+bool CEventsDB::Read(EventsIndex& eventsIndex, const int blockHeight)
 {
     auto result{false};
-    const auto versionLimit{version - Params().MaxReorganizationDepth()};
+    const auto heightLimit{blockHeight - Params().MaxReorganizationDepth()};
     std::unique_ptr<leveldb::Iterator> iterator{getDb().NewIterator()};
 
     for (iterator->SeekToFirst(); iterator->Valid(); iterator->Next()) {
         const auto recordKey{extractFromSlice<KeyType>(iterator->key())};
-        const auto recordVersion{parsePrimaryKey(recordKey)};
+        const auto blockHeight{parsePrimaryKey(recordKey)};
 
-        if (recordVersion >= versionLimit) {
+        if (blockHeight >= heightLimit) {
             const auto ei{extractFromSlice<EventsIndex>(iterator->value())};
             eventsIndex.insert(ei.begin(), ei.end());
             result = true;
@@ -1149,14 +1139,14 @@ std::string CResultsDB::GetDbName()
  *
  * @param pr CPeerlessResult object.
  */
-bool CResultsDB::Save(const CPeerlessResult& plResult, const int version)
+bool CResultsDB::Save(const CPeerlessResult& plResult, const int blockHeight)
 {
     ResultsIndex resultsIndex{};
-    if (!Read(resultsIndex, version)) {
+    if (!Read(resultsIndex, blockHeight)) {
         resultsIndex.clear();
     }
     resultsIndex[plResult.nEventId] = plResult;
-    return Write(resultsIndex, version);
+    return Write(resultsIndex, blockHeight);
 }
 
 /**
@@ -1164,12 +1154,12 @@ bool CResultsDB::Save(const CPeerlessResult& plResult, const int version)
  *
  * @param pe
  */
-bool CResultsDB::Erase(const CPeerlessResult& plResult, const int version)
+bool CResultsDB::Erase(const CPeerlessResult& plResult, const int blockHeight)
 {
     ResultsIndex resultsIndex{};
-    if (Read(resultsIndex, version)) {
+    if (Read(resultsIndex, blockHeight)) {
         resultsIndex.erase(plResult.nEventId);
-        return Write(resultsIndex, version);
+        return Write(resultsIndex, blockHeight);
     }
     return false;
 }
@@ -1180,11 +1170,11 @@ bool CResultsDB::Erase(const CPeerlessResult& plResult, const int version)
  * @param eventIndex       The events index map which contains the current live events.
  * @return                 Bool
  */
-bool CResultsDB::Write(const ResultsIndex& resultsIndex, const int version)
+bool CResultsDB::Write(const ResultsIndex& resultsIndex, const int blockHeight)
 {
     CLevelDBBatch batch{};
-    eraseAncientRecords(batch, version);
-    batch.Write(makePrimaryKey(version), resultsIndex);
+    eraseRecords(batch, blockHeight - Params().MaxReorganizationDepth(), std::less<int>());
+    batch.Write(makePrimaryKey(blockHeight), resultsIndex);
 
     return getDb().WriteBatch(batch);
 }
@@ -1196,17 +1186,17 @@ bool CResultsDB::Write(const ResultsIndex& resultsIndex, const int version)
  * @param eventIndex The event index map which will be populated with data from the file.
  * @return           Bool
  */
-bool CResultsDB::Read(ResultsIndex& resultsIndex, const int version)
+bool CResultsDB::Read(ResultsIndex& resultsIndex, const int blockHeight)
 {
     auto result{false};
-    const auto versionLimit{version - Params().MaxReorganizationDepth()};
+    const auto heightLimit{blockHeight - Params().MaxReorganizationDepth()};
     std::unique_ptr<leveldb::Iterator> iterator{getDb().NewIterator()};
 
     for (iterator->SeekToFirst(); iterator->Valid(); iterator->Next()) {
         const auto recordKey{extractFromSlice<KeyType>(iterator->key())};
-        const auto recordVersion{parsePrimaryKey(recordKey)};
+        const auto blockHeight{parsePrimaryKey(recordKey)};
 
-        if (recordVersion >= versionLimit) {
+        if (blockHeight >= heightLimit) {
             const auto ei{extractFromSlice<ResultsIndex>(iterator->value())};
             resultsIndex.insert(ei.begin(), ei.end());
             result = true;

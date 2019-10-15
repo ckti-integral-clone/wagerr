@@ -409,15 +409,16 @@ public:
     // Default Constructor.
     explicit CBettingDB(std::string dbName, std::size_t cacheSize, bool fWipe);
 
-//    bool AdvanceRestorePoint(const uint256& lastBlockHash);
-//    bool RestoreToPoint(const uint256& bestBlockHash);
+    bool RemoveRecord(const int blockHeight);
 
     using KeyType = std::uint64_t;
 
 protected:
+    using EraseComparator = std::function<bool(int, int)>;
+
     CLevelDBWrapper & getDb();
     static constexpr std::size_t dbWrapperCacheSize();
-    static constexpr KeyType makePrimaryKey(const int version);
+    static constexpr KeyType makePrimaryKey(const int blockHeight);
     static constexpr int parsePrimaryKey(const KeyType key);
 
     template<typename T>
@@ -434,7 +435,7 @@ protected:
         return result;
     }
 
-    void eraseAncientRecords(CLevelDBBatch& batch, const int currentVersion);
+    void eraseRecords(CLevelDBBatch& batch, const int blockHeight, EraseComparator comparator);
 
 private:
     CLevelDBWrapper db;
@@ -452,12 +453,12 @@ public:
 
     static std::string GetDbName();
 
-    bool Save(const CMapping& mapping, const int version);
-    bool Write(const MappingTypes mappingType, const MappingsIndex& mappingsIndex, const int version);
-    bool Read(const MappingTypes mappingType, MappingsIndex& mappingsIndex, const int version);
+    bool Save(const CMapping& mapping, const int blockHeight);
+    bool Write(const MappingTypes mappingType, const MappingsIndex& mappingsIndex, const int blockHeight);
+    bool Read(const MappingTypes mappingType, MappingsIndex& mappingsIndex, const int blockHeight);
 
 private:
-    static constexpr KeyType makeComplexKey(const MappingTypes mappingType, const int version);
+    static constexpr KeyType makeComplexKey(const MappingTypes mappingType, const int blockHeight);
     static std::pair<MappingTypes, int> parseComplexKey(const KeyType key);
 };
 
@@ -472,10 +473,10 @@ public:
 
     static std::string GetDbName();
 
-    bool Save(const CPeerlessEvent& plEvent, const int version);
-    bool Erase(const CPeerlessResult& plEvent, const int version);
-    bool Write(const EventsIndex& eventsIndex, const int version);
-    bool Read(EventsIndex& eventsIndex, const int version);
+    bool Save(const CPeerlessEvent& plEvent, const int blockHeight);
+    bool Erase(const CPeerlessEvent& plEvent, const int blockHeight);
+    bool Write(const EventsIndex& eventsIndex, const int blockHeight);
+    bool Read(EventsIndex& eventsIndex, const int blockHeight);
 };
 
 // Define new map type to store Wagerr results.
@@ -489,10 +490,10 @@ public:
 
     static std::string GetDbName();
 
-    bool Save(const CPeerlessResult& plResult, const int version);
-    bool Erase(const CPeerlessResult& plResult, const int version);
-    bool Write(const ResultsIndex& resultsIndex, const int version);
-    bool Read(ResultsIndex& resultsIndex, const int version);
+    bool Save(const CPeerlessResult& plResult, const int blockHeight);
+    bool Erase(const CPeerlessResult& plResult, const int blockHeight);
+    bool Write(const ResultsIndex& resultsIndex, const int blockHeight);
+    bool Read(ResultsIndex& resultsIndex, const int blockHeight);
 };
 
 /** Container for several db objects */
@@ -528,6 +529,7 @@ std::vector<CBetOut> GetBetPayouts(int height);
 /** Get the chain games winner and return the payout vector. **/
 std::vector<CBetOut> GetCGLottoBetPayouts(int height);
 
+/** Parse the transaction for betting data **/
 void ParseBettingTx(const CTransaction& tx);
 
 /** Get the chain height **/

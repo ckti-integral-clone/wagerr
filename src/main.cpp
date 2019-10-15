@@ -2600,6 +2600,13 @@ bool DisconnectBlock(CBlock& block, CValidationState& state, CBlockIndex* pindex
         }
     }
 
+    // Revert betting dats
+    if (pindex->nHeight > Params().BetStartHeight()) {
+        bettingContext.mappings->RemoveRecord(pindex->nHeight);
+        bettingContext.events->RemoveRecord(pindex->nHeight);
+        bettingContext.results->RemoveRecord(pindex->nHeight);
+    }
+
     // move best block pointer to prevout block
     view.SetBestBlock(pindex->pprev->GetBlockHash());
 
@@ -4858,10 +4865,6 @@ bool AcceptBlock(CBlock& block, CValidationState& state, CBlockIndex** ppindex, 
         for (const CTransaction& tx : block.vtx) {
             ParseBettingTx(tx);
         }
-
-//        bettingContext.mappings->AdvanceRestorePoint(pindex->GetBlockHash());
-//        bettingContext.events->AdvanceRestorePoint(pindex->GetBlockHash());
-//        bettingContext.results->AdvanceRestorePoint(pindex->GetBlockHash());
     }
 
     return true;
