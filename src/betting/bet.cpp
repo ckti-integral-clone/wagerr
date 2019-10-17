@@ -938,9 +938,9 @@ void CBettingDB::eraseRecords(CLevelDBBatch& batch, const int blockHeight, Erase
 
     for (iterator->SeekToFirst(); iterator->Valid(); iterator->Next()) {
         const auto key{extractFromSlice<KeyType>(iterator->key())};
-        const auto version{parsePrimaryKey(key)};
+        const auto height{parsePrimaryKey(key)};
 
-        if (comparator(version, blockHeight)) {
+        if (comparator(height, blockHeight)) {
             batch.Erase(key);
         }
     }
@@ -961,22 +961,31 @@ std::string CMappingsDB::GetDbName()
 
 bool CMappingsDB::Save(const CMapping& mapping, const int blockHeight)
 {
-    MappingsIndex mappingIndex{};
-
-    if (!Read(mapping.GetType(), mappingIndex, blockHeight)) {
-        mappingIndex.clear();
+    MappingsIndex mappingsIndex{};
+    if (!Read(mapping.GetType(), mappingsIndex, blockHeight)) {
+        mappingsIndex.clear();
     }
-    mappingIndex[mapping.nId] = mapping;
-    return Write(mapping.GetType(), mappingIndex, blockHeight);
+    mappingsIndex[mapping.nId] = mapping;
+    return Write(mapping.GetType(), mappingsIndex, blockHeight);
+}
+
+bool CMappingsDB::Erase(const CMapping& mapping, const int blockHeight)
+{
+    MappingsIndex mappingsIndex{};
+    if (Read(mapping.GetType(), mappingsIndex, blockHeight)) {
+        mappingsIndex.erase(mapping.nId);
+        return Write(mapping.GetType(), mappingsIndex, blockHeight);
+    }
+    return false;
 }
 
 /**
  * Serialise a mapping index map into binary format and write to the related .dat file.
  *
- * @param blockHash       The block hash which we can use a reference as to when data was last saved.
- * @param mappingName     The name of Wagerr mapping.
- * @param mappingIndex    The index map which contains Wagerr mappings.
- * @return                Bool
+ * @param mappingName       The name of Wagerr mapping.
+ * @param mappingsIndex     The index map which contains Wagerr mappings.
+ * @param blockHeight       The tip block height.
+ * @return                  Bool
  */
 bool CMappingsDB::Write(const MappingTypes mappingType, const MappingsIndex& mappingsIndex, const int blockHeight)
 {
@@ -986,9 +995,9 @@ bool CMappingsDB::Write(const MappingTypes mappingType, const MappingsIndex& map
 
     for (iterator->SeekToFirst(); iterator->Valid(); iterator->Next()) {
         const auto recordKey{extractFromSlice<KeyType>(iterator->key())};
-        const auto complexKey{parseComplexKey(recordKey)};
+        const auto compoundKey{parseComplexKey(recordKey)};
 
-        if (complexKey.first == mappingType && complexKey.second < heightLimit) {
+        if (compoundKey.first == mappingType && compoundKey.second < heightLimit) {
             batch.Erase(recordKey);
         }
     }
@@ -1000,22 +1009,21 @@ bool CMappingsDB::Write(const MappingTypes mappingType, const MappingsIndex& map
 /**
 * Reads a .dat file and deserializes the data to recreate an index map object.
 *
-* @param blockHash       The block hash which we can use a reference as to when data was last saved.
-* @param mappingName     The name of Wagerr mapping.
-* @param mappingIndex    The index map which contains Wagerr mappings.
-* @return                Bool
+* @param mappingName        The name of Wagerr mapping.
+* @param mappingsIndex      The index map which contains Wagerr mappings.
+* @param blockHeight        The tip block height.
+* @return                   Bool
 */
 bool CMappingsDB::Read(const MappingTypes mappingType, MappingsIndex& mappingsIndex, const int blockHeight)
 {
     auto result{false};
-    const auto heightLimit{blockHeight - Params().MaxReorganizationDepth()};
     std::unique_ptr<leveldb::Iterator> iterator{getDb().NewIterator()};
 
     for (iterator->SeekToFirst(); iterator->Valid(); iterator->Next()) {
         const auto recordKey{extractFromSlice<KeyType>(iterator->key())};
-        const auto complexKey{parseComplexKey(recordKey)};
+        const auto compoundKey{parseComplexKey(recordKey)};
 
-        if (complexKey.first == mappingType && complexKey.second >= heightLimit) {
+        if (compoundKey.first == mappingType && compoundKey.second <= blockHeight) {
             const auto mi{extractFromSlice<MappingsIndex>(iterator->value())};
             mappingsIndex.insert(mi.begin(), mi.end());
             result = true;
@@ -1052,29 +1060,31 @@ std::string CEventsDB::GetDbName()
 /**
  * Add a new event to the event index.
  *
- * @param pe CPeerless Event object.
+ * @param plEvent       The Peerless Event object.
+ * @param blockHeight   The tip block height.
  */
 bool CEventsDB::Save(const CPeerlessEvent& plEvent, const int blockHeight)
 {
-    EventsIndex eventIndex{};
-    if (!Read(eventIndex, blockHeight)) {
-        eventIndex.clear();
+    EventsIndex eventsIndex{};
+    if (!Read(eventsIndex, blockHeight)) {
+        eventsIndex.clear();
     }
-    eventIndex[plEvent.nEventId] = plEvent;
-    return Write(eventIndex, blockHeight);
+    eventsIndex[plEvent.nEventId] = plEvent;
+    return Write(eventsIndex, blockHeight);
 }
 
 /**
  * Remove and event from the event index.
  *
- * @param eventId
+ * @param plEvent           The Peerless Event object.
+ * @param blockHeight       The tip block height.
  */
 bool CEventsDB::Erase(const CPeerlessEvent& plEvent, const int blockHeight)
 {
-    EventsIndex eventIndex{};
-    if (Read(eventIndex, blockHeight)) {
-        eventIndex.erase(plEvent.nEventId);
-        return Write(eventIndex, blockHeight);
+    EventsIndex eventsIndex{};
+    if (Read(eventsIndex, blockHeight)) {
+        eventsIndex.erase(plEvent.nEventId);
+        return Write(eventsIndex, blockHeight);
     }
     return false;
 }
@@ -1082,15 +1092,15 @@ bool CEventsDB::Erase(const CPeerlessEvent& plEvent, const int blockHeight)
 /**
  * Serialises the event index map into binary format and writes to the events.dat file.
  *
- * @param eventIndex       The events index map which contains the current live events.
- * @return                 Bool
+ * @param eventIndex        The events index map which contains the current live events.
+ * @param blockHeight       The tip block height.
+ * @return                  Bool
  */
 bool CEventsDB::Write(const EventsIndex& eventsIndex, const int blockHeight)
 {
     CLevelDBBatch batch{};
     eraseRecords(batch, blockHeight - Params().MaxReorganizationDepth(), std::less<int>());
     batch.Write(makePrimaryKey(blockHeight), eventsIndex);
-
     return getDb().WriteBatch(batch);
 }
 
@@ -1098,20 +1108,20 @@ bool CEventsDB::Write(const EventsIndex& eventsIndex, const int blockHeight)
  * Reads the events.dat file and deserializes the data to recreate event index map object as well as the last
  * block hash before file was written to.
  *
- * @param eventIndex The event index map which will be populated with data from the file.
- * @return           Bool
+ * @param eventIndex        The event index map which will be populated with data from the file.
+ * @param blockHeight       The tip block height.
+ * @return                  Bool
  */
 bool CEventsDB::Read(EventsIndex& eventsIndex, const int blockHeight)
 {
     auto result{false};
-    const auto heightLimit{blockHeight - Params().MaxReorganizationDepth()};
     std::unique_ptr<leveldb::Iterator> iterator{getDb().NewIterator()};
 
     for (iterator->SeekToFirst(); iterator->Valid(); iterator->Next()) {
-        const auto recordKey{extractFromSlice<KeyType>(iterator->key())};
-        const auto blockHeight{parsePrimaryKey(recordKey)};
+        const auto key{extractFromSlice<KeyType>(iterator->key())};
+        const auto height{parsePrimaryKey(key)};
 
-        if (blockHeight >= heightLimit) {
+        if (height <= blockHeight) {
             const auto ei{extractFromSlice<EventsIndex>(iterator->value())};
             eventsIndex.insert(ei.begin(), ei.end());
             result = true;
@@ -1135,9 +1145,11 @@ std::string CResultsDB::GetDbName()
 }
 
 /**
- * Add a new result to the result index.
+ * Add a new result to the results index.
  *
- * @param pr CPeerlessResult object.
+ * @param plResult          The Peerless Result object.
+ * @param blockHeight       The tip block height.
+ * @return                  Bool
  */
 bool CResultsDB::Save(const CPeerlessResult& plResult, const int blockHeight)
 {
@@ -1150,9 +1162,11 @@ bool CResultsDB::Save(const CPeerlessResult& plResult, const int blockHeight)
 }
 
 /**
- * Remove and event from the event index.
+ * Remove result from the results index.
  *
- * @param pe
+ * @param plResult          The Peerless Result object.
+ * @param blockHeight       The tip block height.
+ * @return                  Bool
  */
 bool CResultsDB::Erase(const CPeerlessResult& plResult, const int blockHeight)
 {
@@ -1165,38 +1179,37 @@ bool CResultsDB::Erase(const CPeerlessResult& plResult, const int blockHeight)
 }
 
 /**
- * Serialises the event index map into binary format and writes to the events.dat file.
+ * Serialises the results index map into binary format and writes to the results.dat file.
  *
- * @param eventIndex       The events index map which contains the current live events.
- * @return                 Bool
+ * @param resultsIndex      The results index map.
+ * @param blockHeight       The tip block height.
+ * @return                  Bool
  */
 bool CResultsDB::Write(const ResultsIndex& resultsIndex, const int blockHeight)
 {
     CLevelDBBatch batch{};
     eraseRecords(batch, blockHeight - Params().MaxReorganizationDepth(), std::less<int>());
     batch.Write(makePrimaryKey(blockHeight), resultsIndex);
-
     return getDb().WriteBatch(batch);
 }
 
 /**
- * Reads the events.dat file and deserializes the data to recreate event index map object as well as the last
- * block hash before file was written to.
+ * Reads the results.dat file and deserializes the data to recreate results index map.
  *
- * @param eventIndex The event index map which will be populated with data from the file.
- * @return           Bool
+ * @param resultsIndex      The results index map which will be populated with data from the file.
+ * @param blockHeight       The tip block height.
+ * @return                  Bool
  */
 bool CResultsDB::Read(ResultsIndex& resultsIndex, const int blockHeight)
 {
     auto result{false};
-    const auto heightLimit{blockHeight - Params().MaxReorganizationDepth()};
     std::unique_ptr<leveldb::Iterator> iterator{getDb().NewIterator()};
 
     for (iterator->SeekToFirst(); iterator->Valid(); iterator->Next()) {
-        const auto recordKey{extractFromSlice<KeyType>(iterator->key())};
-        const auto blockHeight{parsePrimaryKey(recordKey)};
+        const auto key{extractFromSlice<KeyType>(iterator->key())};
+        const auto height{parsePrimaryKey(key)};
 
-        if (blockHeight >= heightLimit) {
+        if (height <= blockHeight) {
             const auto ei{extractFromSlice<ResultsIndex>(iterator->value())};
             resultsIndex.insert(ei.begin(), ei.end());
             result = true;

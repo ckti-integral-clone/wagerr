@@ -454,6 +454,7 @@ public:
     static std::string GetDbName();
 
     bool Save(const CMapping& mapping, const int blockHeight);
+    bool Erase(const CMapping& mapping, const int blockHeight);
     bool Write(const MappingTypes mappingType, const MappingsIndex& mappingsIndex, const int blockHeight);
     bool Read(const MappingTypes mappingType, MappingsIndex& mappingsIndex, const int blockHeight);
 
