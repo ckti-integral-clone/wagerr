@@ -912,6 +912,11 @@ bool CBettingDB::RemoveRecord(const int blockHeight)
     return getDb().WriteBatch(batch);
 }
 
+bool CBettingDB::HasRecord(const int blockHeight)
+{
+    return getDb().Exists(makePrimaryKey(blockHeight));
+}
+
 CLevelDBWrapper& CBettingDB::getDb()
 {
     return db;
@@ -990,18 +995,18 @@ bool CMappingsDB::Erase(const CMapping& mapping, const int blockHeight)
 bool CMappingsDB::Write(const MappingTypes mappingType, const MappingsIndex& mappingsIndex, const int blockHeight)
 {
     CLevelDBBatch batch{};
-    const int heightLimit{blockHeight - Params().MaxReorganizationDepth()};
     std::unique_ptr<leveldb::Iterator> iterator{getDb().NewIterator()};
+    const auto heightLimit{blockHeight - Params().MaxReorganizationDepth()};
 
     for (iterator->SeekToFirst(); iterator->Valid(); iterator->Next()) {
         const auto recordKey{extractFromSlice<KeyType>(iterator->key())};
-        const auto compoundKey{parseComplexKey(recordKey)};
+        const auto compoundKey{parseCompoundKey(recordKey)};
 
         if (compoundKey.first == mappingType && compoundKey.second < heightLimit) {
             batch.Erase(recordKey);
         }
     }
-    batch.Write(makeComplexKey(mappingType, blockHeight), mappingsIndex);
+    batch.Write(makeCompundKey(mappingType, blockHeight), mappingsIndex);
 
     return getDb().WriteBatch(batch);
 }
@@ -1021,7 +1026,7 @@ bool CMappingsDB::Read(const MappingTypes mappingType, MappingsIndex& mappingsIn
 
     for (iterator->SeekToFirst(); iterator->Valid(); iterator->Next()) {
         const auto recordKey{extractFromSlice<KeyType>(iterator->key())};
-        const auto compoundKey{parseComplexKey(recordKey)};
+        const auto compoundKey{parseCompoundKey(recordKey)};
 
         if (compoundKey.first == mappingType && compoundKey.second <= blockHeight) {
             const auto mi{extractFromSlice<MappingsIndex>(iterator->value())};
@@ -1033,12 +1038,41 @@ bool CMappingsDB::Read(const MappingTypes mappingType, MappingsIndex& mappingsIn
     return result;
 }
 
-constexpr CBettingDB::KeyType CMappingsDB::makeComplexKey(const MappingTypes mappingType, const int blockHeight)
+bool CMappingsDB::HasRecord(const int blockHeight)
+{
+    std::unique_ptr<leveldb::Iterator> iterator{getDb().NewIterator()};
+
+    for (iterator->SeekToFirst(); iterator->Valid(); iterator->Next()) {
+        const auto recordKey{extractFromSlice<KeyType>(iterator->key())};
+        const auto compoundKey{parseCompoundKey(recordKey)};
+
+        if (compoundKey.second == blockHeight) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void CMappingsDB::eraseRecords(CLevelDBBatch& batch, const int blockHeight, EraseComparator comparator)
+{
+    std::unique_ptr<leveldb::Iterator> iterator{getDb().NewIterator()};
+
+    for (iterator->SeekToFirst(); iterator->Valid(); iterator->Next()) {
+        const auto recordKey{extractFromSlice<KeyType>(iterator->key())};
+        const auto compoundKey{parseCompoundKey(recordKey)};
+
+        if (comparator(compoundKey.second, blockHeight)) {
+            batch.Erase(recordKey);
+        }
+    }
+}
+
+constexpr CBettingDB::KeyType CMappingsDB::makeCompundKey(const MappingTypes mappingType, const int blockHeight)
 {
     return makePrimaryKey(blockHeight) + static_cast<KeyType>(mappingType);
 }
 
-std::pair<MappingTypes, int> CMappingsDB::parseComplexKey(const KeyType key)
+std::pair<MappingTypes, int> CMappingsDB::parseCompoundKey(const KeyType key)
 {
     const auto type{static_cast<MappingTypes>(key & std::numeric_limits<std::uint32_t>::max())};
     return std::make_pair(type, parsePrimaryKey(key));
@@ -2093,12 +2127,11 @@ std::vector<CBetOut> GetCGLottoBetPayouts (int height)
     return vexpectedCGLottoBetPayouts;
 }
 
-void ParseBettingTx(const CTransaction& tx)
+void ParseBettingTx(const CTransaction& tx, const int height)
 {
     // Ensure the event TX has come from Oracle wallet.
     const CTxIn& txin{tx.vin[0]};
     const bool validOracleTx{IsValidOracleTx(txin)};
-    const int chainHeight{GetActiveChainHeight(true)};
 
     // Search for any new bets
     for (unsigned int i = 0; i < tx.vout.size(); i++) {
@@ -2117,7 +2150,7 @@ void ParseBettingTx(const CTransaction& tx)
                 uint64_t betXPermille{Params().BetXPermille()};
 
                 // Check the events index actually has events
-                if (bettingContext.events->Read(eventsIndex, chainHeight) && eventsIndex.size() > 0) {
+                if (bettingContext.events->Read(eventsIndex, height) && eventsIndex.size() > 0) {
                     CPeerlessEvent pe = eventsIndex.find(plBet.nEventId)->second;
                     CAmount payout = 0 * COIN;
                     CAmount burn = 0;
@@ -2191,7 +2224,7 @@ void ParseBettingTx(const CTransaction& tx)
                     }
 
                     eventsIndex[plBet.nEventId] = pe;
-                    bettingContext.events->Write(eventsIndex, chainHeight);
+                    bettingContext.events->Write(eventsIndex, height);
                 }
             }
         }
@@ -2214,13 +2247,13 @@ void ParseBettingTx(const CTransaction& tx)
                 // If mapping found then add it to the relating map index and write the map index to disk.
                 CMapping mapping{};
                 if (CMapping::FromOpCode(opCode, mapping)) {
-                    bettingContext.mappings->Save(mapping, chainHeight);
+                    bettingContext.mappings->Save(mapping, height);
                 }
 
                 // If events found in block add them to the events index.
                 CPeerlessEvent plEvent{};
                 if (CPeerlessEvent::FromOpCode(opCode, plEvent)) {
-                    bettingContext.events->Save(plEvent, chainHeight);
+                    bettingContext.events->Save(plEvent, height);
                 }
 
                 // If event patch found in block apply them to the events.
@@ -2229,7 +2262,7 @@ void ParseBettingTx(const CTransaction& tx)
                     EventsIndex eventIndex{};
                     // First check a peerless event exists in the event index.
                     if (
-                            bettingContext.events->Read(eventIndex, chainHeight) &&
+                            bettingContext.events->Read(eventIndex, height) &&
                             eventIndex.count(plEventPatch.nEventId) > 0
                     ) {
                         // Get the event object from the index and update the totals odds values.
@@ -2239,14 +2272,14 @@ void ParseBettingTx(const CTransaction& tx)
 
                         // Update the event in the event index.
                         eventIndex[plEventPatch.nEventId] = plEvent;
-                        bettingContext.events->Write(eventIndex, chainHeight);
+                        bettingContext.events->Write(eventIndex, height);
                     }
                 }
 
                 // If results found in block add result to result index.
                 CPeerlessResult plResult{};
                 if (CPeerlessResult::FromOpCode(opCode, plResult)) {
-                    bettingContext.results->Save(plResult, chainHeight);
+                    bettingContext.results->Save(plResult, height);
                 }
 
                 // If update money line odds TX found in block, update the event index.
@@ -2255,7 +2288,7 @@ void ParseBettingTx(const CTransaction& tx)
                     EventsIndex eventIndex{};
                     // First check a peerless event exists in the event index.
                     if (
-                            bettingContext.events->Read(eventIndex, chainHeight) &&
+                            bettingContext.events->Read(eventIndex, height) &&
                             eventIndex.count(puo.nEventId) > 0
                     ) {
                         // Get the event object from the index and update the money line odds values.
@@ -2267,7 +2300,7 @@ void ParseBettingTx(const CTransaction& tx)
 
                         // Update the event in the event index.
                         eventIndex[puo.nEventId] = plEvent;
-                        bettingContext.events->Write(eventIndex, chainHeight);
+                        bettingContext.events->Write(eventIndex, height);
                     }
                 }
 
@@ -2277,7 +2310,7 @@ void ParseBettingTx(const CTransaction& tx)
                     EventsIndex eventIndex{};
                     // First check a peerless event exists in the event index.
                     if (
-                            bettingContext.events->Read(eventIndex, chainHeight) &&
+                            bettingContext.events->Read(eventIndex, height) &&
                             eventIndex.count(spreadEvent.nEventId) > 0
                     ) {
                         // Get the event object from the index and update the spread odds values.
@@ -2289,7 +2322,7 @@ void ParseBettingTx(const CTransaction& tx)
 
                         // Update the event in the event index.
                         eventIndex[spreadEvent.nEventId] = plEvent;
-                        bettingContext.events->Write(eventIndex, chainHeight);
+                        bettingContext.events->Write(eventIndex, height);
                     }
                 }
 
@@ -2299,7 +2332,7 @@ void ParseBettingTx(const CTransaction& tx)
                     EventsIndex eventIndex{};
                     // First check a peerless event exists in the event index.
                     if (
-                            bettingContext.events->Read(eventIndex, chainHeight) &&
+                            bettingContext.events->Read(eventIndex, height) &&
                             eventIndex.count(totalsEvent.nEventId) > 0
                     ) {
                         // Get the event object from the index and update the totals odds values.
@@ -2311,7 +2344,7 @@ void ParseBettingTx(const CTransaction& tx)
 
                         // Update the event in the event index.
                         eventIndex[totalsEvent.nEventId] = plEvent;
-                        bettingContext.events->Write(eventIndex, chainHeight);
+                        bettingContext.events->Write(eventIndex, height);
                     }
                 }
             }

@@ -409,7 +409,8 @@ public:
     // Default Constructor.
     explicit CBettingDB(std::string dbName, std::size_t cacheSize, bool fWipe);
 
-    bool RemoveRecord(const int blockHeight);
+    virtual bool RemoveRecord(const int blockHeight);
+    virtual bool HasRecord(const int blockHeight);
 
     using KeyType = std::uint64_t;
 
@@ -435,7 +436,7 @@ protected:
         return result;
     }
 
-    void eraseRecords(CLevelDBBatch& batch, const int blockHeight, EraseComparator comparator);
+    virtual void eraseRecords(CLevelDBBatch& batch, const int blockHeight, EraseComparator comparator);
 
 private:
     CLevelDBWrapper db;
@@ -458,9 +459,14 @@ public:
     bool Write(const MappingTypes mappingType, const MappingsIndex& mappingsIndex, const int blockHeight);
     bool Read(const MappingTypes mappingType, MappingsIndex& mappingsIndex, const int blockHeight);
 
+    bool HasRecord(const int blockHeight) override;
+
+protected:
+    void eraseRecords(CLevelDBBatch& batch, const int blockHeight, EraseComparator comparator) override;
+
 private:
-    static constexpr KeyType makeComplexKey(const MappingTypes mappingType, const int blockHeight);
-    static std::pair<MappingTypes, int> parseComplexKey(const KeyType key);
+    static constexpr KeyType makeCompundKey(const MappingTypes mappingType, const int blockHeight);
+    static std::pair<MappingTypes, int> parseCompoundKey(const KeyType key);
 };
 
 // Define new map type to store Wagerr events.
@@ -531,7 +537,7 @@ std::vector<CBetOut> GetBetPayouts(int height);
 std::vector<CBetOut> GetCGLottoBetPayouts(int height);
 
 /** Parse the transaction for betting data **/
-void ParseBettingTx(const CTransaction& tx);
+void ParseBettingTx(const CTransaction& tx, const int height);
 
 /** Get the chain height **/
 int GetActiveChainHeight(const bool lockHeld = false);

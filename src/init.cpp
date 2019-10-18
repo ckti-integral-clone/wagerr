@@ -1616,16 +1616,37 @@ bool AppInit2()
                         break;
                     }
 
-//                    if (
-//                            tipBlockHash.IsNull() ||
-//                            !bettingContext.mappings->RestoreToPoint(tipBlockHash) ||
-//                            !bettingContext.events->RestoreToPoint(tipBlockHash) ||
-//                            !bettingContext.results->RestoreToPoint(tipBlockHash)
-//                    ) {
-//                        strLoadError = _("Corrupted betting database detected. You need to rebuild the database using -reindex");
-//                        fVerifyingBlocks = false;
-//                        break;
-//                    }
+                    uiInterface.InitMessage(_("Recovery betting database..."));
+                    for (auto done{0}, height{chainHeight}; height > 0 && done != 7; height--) {
+                        auto needParseBlock{false};
+
+                        if (bettingContext.mappings->HasRecord(height)) {
+                            done |= 1;
+                        } else {
+                            needParseBlock = true;
+                        }
+                        if (bettingContext.events->HasRecord(height)) {
+                            done |= 2;
+                        } else {
+                            needParseBlock = true;
+                        }
+                        if (bettingContext.results->HasRecord(height)) {
+                            done |= 4;
+                        } else {
+                            needParseBlock = true;
+                        }
+
+                        if (needParseBlock) {
+                            CBlock block{};
+                            if (!ReadBlockFromDisk(block, chainActive[height])) {
+                                return InitError(_("Can't read block from disk"));
+                            }
+
+                            for (const auto& tx : block.vtx) {
+                                ParseBettingTx(tx, height);
+                            }
+                        }
+                    }
                 }
             } catch (std::exception& e) {
                 if (fDebug) LogPrintf("%s\n", e.what());

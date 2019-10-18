@@ -69,7 +69,7 @@ UniValue listevents(const UniValue& params, bool fHelp)
 
     EventsIndex eventsIndex{};
     UniValue result{UniValue::VARR};
-    const int chainHeight{GetActiveChainHeight(true)};
+    const int chainHeight{GetActiveChainHeight()};
 
     if (!bettingContext.events->Read(eventsIndex, chainHeight)) {
         return result;

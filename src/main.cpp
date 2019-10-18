@@ -4863,7 +4863,7 @@ bool AcceptBlock(CBlock& block, CValidationState& state, CBlockIndex** ppindex, 
     // Look through the block for any events, results or mapping TX.
     if (pindex->nHeight > Params().BetStartHeight()) {
         for (const CTransaction& tx : block.vtx) {
-            ParseBettingTx(tx);
+            ParseBettingTx(tx, pindex->nHeight);
         }
     }
 
