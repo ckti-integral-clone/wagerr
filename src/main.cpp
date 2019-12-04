@@ -2599,6 +2599,13 @@ bool DisconnectBlock(CBlock& block, CValidationState& state, CBlockIndex* pindex
         }
         // Revert betting dats
         if (pindex->nHeight > Params().BetStartHeight()) {
+            // revert complete bet payouts marker
+            if (pindex->nHeight > Params().ParlayBetStartHeight()) {
+                if (!UndoBetPayouts(bettingsViewCache, pindex->nHeight - 1)) {
+                    error("DisconnectBlock(): undo payout data inconsistent");
+                    return false;
+                }
+            }
             if (!UndoBettingTx(bettingsViewCache, tx, pindex->nHeight)) {
                 error("DisconnectBlock(): custom transaction and undo data inconsistent");
                 return false;
@@ -3247,7 +3254,12 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
         //const char * BetNetExpectedTxtConst = strBetNetExpectedTxt.c_str();
 
         // Get the PL and CG bet payout TX's so we can calculate the winning bet vector which is used to mint coins and payout bets.
-        vExpectedPLPayouts = GetBetPayoutsLegacy(pindex->nHeight - 1);
+        if (pindex->nHeight > Params().ParlayBetStartHeight()) {
+            vExpectedPLPayouts = GetBetPayouts(bettingsViewCache, pindex->nHeight - 1);
+        }
+        else {
+            vExpectedPLPayouts = GetBetPayoutsLegacy(pindex->nHeight - 1);
+        }
         vExpectedCGLottoPayouts = GetCGLottoBetPayouts(pindex->nHeight - 1);
 
         // Get the total amount of WGR that needs to be minted to payout all winning bets.
@@ -4079,6 +4091,7 @@ CBlockIndex* AddToBlockIndex(const CBlock& block)
             if (!ComputeNextStakeModifier(pindexNew->pprev, nStakeModifier, fGeneratedStakeModifier))
                 LogPrintf("AddToBlockIndex() : ComputeNextStakeModifier() failed \n");
             pindexNew->SetStakeModifier(nStakeModifier, fGeneratedStakeModifier);
+            LogPrintf("AddToBlockIndex() : SetStakeModifier %llu ******\n", nStakeModifier);
             pindexNew->nStakeModifierChecksum = GetStakeModifierChecksum(pindexNew);
             if (!CheckStakeModifierCheckpoints(pindexNew->nHeight, pindexNew->nStakeModifierChecksum))
                 LogPrintf("AddToBlockIndex() : Rejected by stake modifier checkpoint height=%d, modifier=%s \n", pindexNew->nHeight, std::to_string(nStakeModifier));
