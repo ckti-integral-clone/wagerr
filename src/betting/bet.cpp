@@ -1373,7 +1373,7 @@ std::vector<CBetOut> GetBetPayouts(CBettingsView &bettingsViewCache, int height)
         uint32_t startHeight = nCurrentHeight >= Params().BetBlocksIndexTimespan() ? nCurrentHeight - Params().BetBlocksIndexTimespan() : 0;
 
         auto it = bettingsViewCache.bets->NewIterator();
-        for (it->Seek(CBettingDB::DbTypeToBytes(UniversalBetKey{startHeight, COutPoint()})); it->Valid(); it->Next()) {
+        for (it->Seek(CBettingDB::DbTypeToBytes(UniversalBetKey{static_cast<uint32_t>(startHeight), COutPoint()})); it->Valid(); it->Next()) {
             UniversalBetKey uniBetKey;
             CUniversalBet uniBet;
             CBettingDB::BytesToDbType(it->Key(), uniBetKey);
@@ -2039,7 +2039,7 @@ void ParseBettingTx(CBettingsView& bettingsViewCache, const CTransaction& tx, co
     uint64_t oddsDivisor{Params().OddsDivisor()};
     uint64_t betXPermille{Params().BetXPermille()};
 
-    bool parlayBetsAvaible = height >= Params().ParlayBetStartHeight();
+    bool parlayBetsAvaible = height > Params().ParlayBetStartHeight();
 
     // Search for any new bets
     for (unsigned int i = 0; i < tx.vout.size(); i++) {
@@ -2072,12 +2072,15 @@ void ParseBettingTx(CBettingsView& bettingsViewCache, const CTransaction& tx, co
                 std::sort(legs.begin(), legs.end());
                 legs.erase(std::unique(legs.begin(), legs.end()), legs.end());
 
+                std::vector<CBettingUndo> vUndos;
+
                 for (auto it = legs.begin(); it != legs.end();) {
                     CPeerlessBet &bet{*it};
                     CPeerlessEvent plEvent;
                     EventKey eventKey{bet.nEventId};
                     if (bettingsViewCache.events->Read(eventKey, plEvent) &&
                             !(plEvent.nStartTime > 0 && blockTime > (plEvent.nStartTime - Params().BetPlaceTimeoutBlocks()))) {
+                        vUndos.emplace_back(BettingUndoVariant{plEvent}, (uint32_t)height);
                         switch (bet.nOutcome) {
                             case moneyLineWin:
                                 plEvent.nMoneyLineHomeBets += 1;
@@ -2116,7 +2119,11 @@ void ParseBettingTx(CBettingsView& bettingsViewCache, const CTransaction& tx, co
                         it = legs.erase(it);
                     }
                 }
-                bettingsViewCache.bets->Write(UniversalBetKey{static_cast<uint32_t>(height), out}, CUniversalBet(betAmount, address, legs, lockedEvents, out, blockTime));
+                if (!legs.empty()) {
+                    // save prev event state to undo
+                    bettingsViewCache.SaveBettingUndo(undoId, vUndos);
+                    bettingsViewCache.bets->Write(UniversalBetKey{static_cast<uint32_t>(height), out}, CUniversalBet(betAmount, address, legs, lockedEvents, out, blockTime));
+                }
                 continue;
             }
 
@@ -2136,7 +2143,7 @@ void ParseBettingTx(CBettingsView& bettingsViewCache, const CTransaction& tx, co
                     if (parlayBetsAvaible && plEvent.nStartTime > 0 && blockTime > (plEvent.nStartTime - Params().BetPlaceTimeoutBlocks())) continue;
 
                     // save prev event state to undo
-                    bettingsViewCache.SaveBettingUndo(undoId, CBettingUndo{BettingUndoVariant{plEvent}, (uint32_t)height});
+                    bettingsViewCache.SaveBettingUndo(undoId, {CBettingUndo{BettingUndoVariant{plEvent}, (uint32_t)height}});
                     // Check which outcome the bet was placed on and add to accumulators
                     switch (plBet.nOutcome) {
                         case moneyLineWin:
@@ -2266,12 +2273,13 @@ void ParseBettingTx(CBettingsView& bettingsViewCache, const CTransaction& tx, co
                 // If event patch found in block apply them to the events.
                 CPeerlessEventPatch plEventPatch{};
                 if (CPeerlessEventPatch::FromOpCode(opCode, plEventPatch)) {
+                    LogPrintf("CPeerlessEventPatch: id: %lu, time: %lu\n", plEventPatch.nEventId, plEventPatch.nStartTime);
                     CPeerlessEvent plEvent;
                     EventKey eventKey{plEventPatch.nEventId};
                     // First check a peerless event exists in DB
                     if (bettingsViewCache.events->Read(eventKey, plEvent)) {
                         // save prev event state to undo
-                        bettingsViewCache.SaveBettingUndo(undoId, CBettingUndo{BettingUndoVariant{plEvent}, (uint32_t)height});
+                        bettingsViewCache.SaveBettingUndo(undoId, {CBettingUndo{BettingUndoVariant{plEvent}, (uint32_t)height}});
 
                         plEvent.nStartTime = plEventPatch.nStartTime;
                         bettingsViewCache.events->Update(eventKey, plEvent);
@@ -2282,6 +2290,7 @@ void ParseBettingTx(CBettingsView& bettingsViewCache, const CTransaction& tx, co
                 // If results found in block add result to result index.
                 CPeerlessResult plResult{};
                 if (CPeerlessResult::FromOpCode(opCode, plResult)) {
+                    LogPrintf("CPeerlessResult: id: %lu, resultType: %lu, homeScore: %lu, awayScore: %lu\n", plResult.nEventId, plResult.nResultType, plResult.nHomeScore, plResult.nAwayScore);
                     ResultKey resultKey{plResult.nEventId};
                     bettingsViewCache.results->Write(resultKey, plResult);
                     continue;
@@ -2290,12 +2299,13 @@ void ParseBettingTx(CBettingsView& bettingsViewCache, const CTransaction& tx, co
                 // If update money line odds TX found in block, update the event index.
                 CPeerlessUpdateOdds puo{};
                 if (CPeerlessUpdateOdds::FromOpCode(opCode, puo)) {
+                    LogPrintf("CPeerlessUpdateOdds: id: %lu, homeOdds: %lu, awayOdds: %lu, drawOdds: %lu\n", puo.nEventId, puo.nHomeOdds, puo.nAwayOdds, puo.nDrawOdds);
                     CPeerlessEvent plEvent;
                     EventKey eventKey{puo.nEventId};
                     // First check a peerless event exists in DB.
                     if (bettingsViewCache.events->Read(eventKey, plEvent)) {
                         // save prev event state to undo
-                        bettingsViewCache.SaveBettingUndo(undoId, CBettingUndo{BettingUndoVariant{plEvent}, (uint32_t)height});
+                        bettingsViewCache.SaveBettingUndo(undoId, {CBettingUndo{BettingUndoVariant{plEvent}, (uint32_t)height}});
 
                         plEvent.nHomeOdds = puo.nHomeOdds;
                         plEvent.nAwayOdds = puo.nAwayOdds;
@@ -2310,12 +2320,13 @@ void ParseBettingTx(CBettingsView& bettingsViewCache, const CTransaction& tx, co
                 // If spread odds TX found then update the spread odds for that event object.
                 CPeerlessSpreadsEvent spreadEvent{};
                 if (CPeerlessSpreadsEvent::FromOpCode(opCode, spreadEvent)) {
+                    LogPrintf("CPeerlessSpreadsEvent: id: %lu, spreadPoints: %lu, homeOdds: %lu, awayOdds: %lu\n", spreadEvent.nEventId, spreadEvent.nPoints, spreadEvent.nHomeOdds, spreadEvent.nAwayOdds);
                     CPeerlessEvent plEvent;
                     EventKey eventKey{spreadEvent.nEventId};
                     // First check a peerless event exists in the event index.
                     if (bettingsViewCache.events->Read(eventKey, plEvent)) {
                         // save prev event state to undo
-                        bettingsViewCache.SaveBettingUndo(undoId, CBettingUndo{BettingUndoVariant{plEvent}, (uint32_t)height});
+                        bettingsViewCache.SaveBettingUndo(undoId, {CBettingUndo{BettingUndoVariant{plEvent}, (uint32_t)height}});
 
                         plEvent.nSpreadPoints    = spreadEvent.nPoints;
                         plEvent.nSpreadHomeOdds  = spreadEvent.nHomeOdds;
@@ -2329,12 +2340,13 @@ void ParseBettingTx(CBettingsView& bettingsViewCache, const CTransaction& tx, co
                 // If total odds TX found then update the total odds for that event object.
                 CPeerlessTotalsEvent totalsEvent{};
                 if (CPeerlessTotalsEvent::FromOpCode(opCode, totalsEvent)) {
+                    LogPrintf("CPeerlessTotalsEvent: id: %lu, totalPoints: %lu, overOdds: %lu, underOdds: %lu\n", totalsEvent.nEventId, totalsEvent.nPoints, totalsEvent.nOverOdds, totalsEvent.nUnderOdds);
                     CPeerlessEvent plEvent;
                     EventKey eventKey{totalsEvent.nEventId};
                     // First check a peerless event exists in the event index.
                     if (bettingsViewCache.events->Read(eventKey, plEvent)) {
                         // save prev event state to undo
-                        bettingsViewCache.SaveBettingUndo(undoId, CBettingUndo{BettingUndoVariant{plEvent}, (uint32_t)height});
+                        bettingsViewCache.SaveBettingUndo(undoId, {CBettingUndo{BettingUndoVariant{plEvent}, (uint32_t)height}});
 
                         plEvent.nTotalPoints    = totalsEvent.nPoints;
                         plEvent.nTotalOverOdds  = totalsEvent.nOverOdds;
@@ -2366,53 +2378,43 @@ bool RecoveryBettingDB(boost::signals2::signal<void(const std::string&)> & progr
     return true;
 }
 
-bool UndoEventChanges(CBettingsView& bettingsViewCache, const EventKey& eventKey, const BettingUndoKey& undoKey, const uint32_t height)
+bool UndoEventChanges(CBettingsView& bettingsViewCache, const BettingUndoKey& undoKey, const uint32_t height)
 {
-    CBettingUndo undo = bettingsViewCache.GetBettingUndo(undoKey);
-    if (!undo.Inited() || undo.Get().which() != UndoPeerlessEvent || undo.height != height) {
-        return false;
-    }
-    else {
-        CPeerlessEvent event = boost::get<CPeerlessEvent>(undo.Get());
-        assert(event.nEventId == eventKey);
-        if (!bettingsViewCache.events->Update(eventKey, event))
-            return false;
+    std::vector<CBettingUndo> vUndos = bettingsViewCache.GetBettingUndo(undoKey);
+    for (auto undo : vUndos) {
+        if (!undo.Inited() || undo.Get().which() != UndoPeerlessEvent || undo.height != height) {
+            std::runtime_error("Invalid undo state!");
+        }
+        else {
+            CPeerlessEvent event = boost::get<CPeerlessEvent>(undo.Get());
+            if (!bettingsViewCache.events->Update(EventKey{event.nEventId}, event))
+                std::runtime_error("Couldn't revert event when undo!");
+        }
     }
 
     return bettingsViewCache.EraseBettingUndo(undoKey);
 }
 
-bool UndoBettingTx(CBettingsView& bettingsViewCache, const CTransaction& tx, const uint32_t height)
+bool UndoBettingTx(CBettingsView& bettingsViewCache, const CTransaction& tx, const uint32_t height, const int64_t blockTime)
 {
-
     // Ensure the event TX has come from Oracle wallet.
     const CTxIn& txin{tx.vin[0]};
     const bool validOracleTx{IsValidOracleTx(txin)};
 
-    // Search for any new bets
-    for (unsigned int i = 0; i < tx.vout.size(); i++) {
-        const CTxOut& txout = tx.vout[i];
-        std::string s = txout.scriptPubKey.ToString();
+    bool parlayBetsAvaible = height > Params().ParlayBetStartHeight();
 
-        COutPoint out(tx.GetHash(), i);
-        const uint256 undoId = SerializeHash(out);
+    // First revert OMNO transactions
+    if (validOracleTx) {
+        for (unsigned int i = 0; i < tx.vout.size(); i++) {
+            const CTxOut& txout = tx.vout[i];
+            std::string s = txout.scriptPubKey.ToString();
 
-        if (0 == strncmp(s.c_str(), "OP_RETURN", 9)) {
-            std::vector<unsigned char> v = ParseHex(s.substr(9, std::string::npos));
-            std::string opCode(v.begin(), v.end());
+            COutPoint out(tx.GetHash(), i);
+            const uint256 undoId = SerializeHash(out);
 
-            CPeerlessBet plBet;
-            // If bet- find event undo and revert changes
-            if (CPeerlessBet::FromOpCode(opCode, plBet)) {
-                EventKey eventKey{plBet.nEventId};
-
-                if (!UndoEventChanges(bettingsViewCache, eventKey, undoId, height))
-                    return false;
-                continue;
-            }
-
-            // If a valid OMNO transaction.
-            if (validOracleTx) {
+            if (0 == strncmp(s.c_str(), "OP_RETURN", 9)) {
+                std::vector<unsigned char> v = ParseHex(s.substr(9, std::string::npos));
+                std::string opCode(v.begin(), v.end());
 
                 // If mapping - just remove
                 CMapping mapping{};
@@ -2437,7 +2439,7 @@ bool UndoBettingTx(CBettingsView& bettingsViewCache, const CTransaction& tx, con
                 if (CPeerlessEventPatch::FromOpCode(opCode, plEventPatch)) {
                     EventKey eventKey{plEventPatch.nEventId};
 
-                    if (!UndoEventChanges(bettingsViewCache, eventKey, undoId, height))
+                    if (!UndoEventChanges(bettingsViewCache, undoId, height))
                         return false;
                     continue;
                 }
@@ -2456,7 +2458,7 @@ bool UndoBettingTx(CBettingsView& bettingsViewCache, const CTransaction& tx, con
                 if (CPeerlessUpdateOdds::FromOpCode(opCode, puo)) {
                     EventKey eventKey{puo.nEventId};
 
-                    if (!UndoEventChanges(bettingsViewCache, eventKey, undoId, height))
+                    if (!UndoEventChanges(bettingsViewCache, undoId, height))
                         return false;
                     continue;
                 }
@@ -2466,7 +2468,7 @@ bool UndoBettingTx(CBettingsView& bettingsViewCache, const CTransaction& tx, con
                 if (CPeerlessSpreadsEvent::FromOpCode(opCode, spreadEvent)) {
                     EventKey eventKey{spreadEvent.nEventId};
 
-                    if (!UndoEventChanges(bettingsViewCache, eventKey, undoId, height))
+                    if (!UndoEventChanges(bettingsViewCache, undoId, height))
                         return false;
                     continue;
                 }
@@ -2476,9 +2478,67 @@ bool UndoBettingTx(CBettingsView& bettingsViewCache, const CTransaction& tx, con
                 if (CPeerlessTotalsEvent::FromOpCode(opCode, totalsEvent)) {
                     EventKey eventKey{totalsEvent.nEventId};
 
-                    if (!UndoEventChanges(bettingsViewCache, eventKey, undoId, height))
+                    if (!UndoEventChanges(bettingsViewCache, undoId, height))
                         return false;
                     continue;
+                }
+            }
+        }
+    }
+
+    // Search for any bets
+    for (unsigned int i = 0; i < tx.vout.size(); i++) {
+        const CTxOut& txout = tx.vout[i];
+        std::string s = txout.scriptPubKey.ToString();
+
+        COutPoint out(tx.GetHash(), i);
+        const uint256 undoId = SerializeHash(out);
+
+        if (0 == strncmp(s.c_str(), "OP_RETURN", 9)) {
+            std::vector<unsigned char> v = ParseHex(s.substr(9, std::string::npos));
+            std::string opCode(v.begin(), v.end());
+            std::string opCodeHexStr = s.substr(10);
+
+            CPeerlessBet plBet;
+            // If bet- find event undo and revert changes
+            if (CPeerlessBet::FromOpCode(opCode, plBet)) {
+                CPeerlessEvent plEvent;
+                EventKey eventKey{plBet.nEventId};
+                // Find the event in DB
+                if (bettingsViewCache.events->Read(eventKey, plEvent) &&
+                            !(plEvent.nStartTime > 0 && blockTime > plEvent.nStartTime)) {
+
+                    if (!UndoEventChanges(bettingsViewCache, undoId, height))
+                        return false;
+                    if (parlayBetsAvaible) {
+                        // just delete bet from DB
+                        UniversalBetKey key{height, out};
+                        bettingsViewCache.bets->Erase(key);
+                    }
+
+                }
+                continue;
+            }
+            std::vector<CPeerlessBet> legs;
+            if (parlayBetsAvaible && CPeerlessBet::ParlayFromOpCode(opCodeHexStr, legs)) {
+                // delete duplicated legs
+                std::sort(legs.begin(), legs.end());
+                legs.erase(std::unique(legs.begin(), legs.end()), legs.end());
+
+                for (auto it = legs.begin(); it != legs.end();) {
+                    CPeerlessBet &bet{*it};
+                    CPeerlessEvent plEvent;
+                    EventKey eventKey{bet.nEventId};
+                    if (!bettingsViewCache.events->Read(eventKey, plEvent) ||
+                            (plEvent.nStartTime > 0 && blockTime > (plEvent.nStartTime - Params().BetPlaceTimeoutBlocks()))) {
+                        legs.erase(it);
+                    }
+                }
+                if (!legs.empty()) {
+                    if (!UndoEventChanges(bettingsViewCache, undoId, height))
+                        return false;
+                    UniversalBetKey key{static_cast<uint32_t>(height), out};
+                    bettingsViewCache.bets->Erase(key);
                 }
             }
         }
