@@ -202,12 +202,12 @@ public:
         nEventId = eventId;
         nOutcome = outcome;
     }
-    bool operator<(const CPeerlessBet& rhs)
+    bool operator<(const CPeerlessBet& rhs) const
     {
         return nEventId == rhs.nEventId ? nOutcome < rhs.nOutcome : nEventId < rhs.nEventId;
     }
 
-    bool operator==(const CPeerlessBet& rhs)
+    bool operator==(const CPeerlessBet& rhs) const
     {
         return nEventId == rhs.nEventId && nOutcome == rhs.nOutcome;
     }

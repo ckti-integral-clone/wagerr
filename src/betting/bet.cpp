@@ -2075,7 +2075,7 @@ void ParseBettingTx(CBettingsView& bettingsViewCache, const CTransaction& tx, co
                 std::vector<CBettingUndo> vUndos;
 
                 for (auto it = legs.begin(); it != legs.end();) {
-                    CPeerlessBet &bet{*it};
+                    CPeerlessBet &bet = *it;
                     CPeerlessEvent plEvent;
                     EventKey eventKey{bet.nEventId};
                     if (bettingsViewCache.events->Read(eventKey, plEvent) &&
@@ -2526,7 +2526,7 @@ bool UndoBettingTx(CBettingsView& bettingsViewCache, const CTransaction& tx, con
                 legs.erase(std::unique(legs.begin(), legs.end()), legs.end());
 
                 for (auto it = legs.begin(); it != legs.end();) {
-                    CPeerlessBet &bet{*it};
+                    CPeerlessBet &bet = *it;
                     CPeerlessEvent plEvent;
                     EventKey eventKey{bet.nEventId};
                     if (!bettingsViewCache.events->Read(eventKey, plEvent) ||
