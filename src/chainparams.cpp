@@ -77,14 +77,14 @@ static const Checkpoints::CCheckpointData data = {
 
 static Checkpoints::MapCheckpoints mapCheckpointsTestnet =
     boost::assign::map_list_of
-    (       0, uint256("00000fdc268f54ff1368703792dc046b1356e60914c2b5b6348032144bcb2de5"))
-    (       1, uint256("00000ee56853cd05cda3148653fe2815075d2251299a23c84de189e70c5d9757"))     // 1567576895   2
-    (     450, uint256("defe8866695382de16183afd0321d651e91cafe9d7080ed6cc7ab9e17fc1074d"))     // 1567615777   635
-    (     469, uint256("c4751ac19dedcce9b51243f9d333d33018099ba0757c23842780d814e84aeef1"));    // 1567623780   673
+    (       0, uint256("000002da72ea66064e16ee039af062683fb4c01a759970587ce067fbb0ce8edd"));
+    // (       1, uint256("00000ee56853cd05cda3148653fe2815075d2251299a23c84de189e70c5d9757"))     // 1567576895   2
+    // (     450, uint256("defe8866695382de16183afd0321d651e91cafe9d7080ed6cc7ab9e17fc1074d"))     // 1567615777   635
+    // (     469, uint256("c4751ac19dedcce9b51243f9d333d33018099ba0757c23842780d814e84aeef1"));    // 1567623780   673
 static const Checkpoints::CCheckpointData dataTestnet = {
     &mapCheckpointsTestnet,
-    1567615777,
-    673,
+    1518696183,
+    1,
     1000};
 
 static Checkpoints::MapCheckpoints mapCheckpointsRegtest =
@@ -369,11 +369,21 @@ public:
         nZerocoinCheckTX = -1;
 
         //! Modify the testnet genesis block so the timestamp is valid for a later start.
-        genesis.nTime = 1518696182;
-        genesis.nNonce = 75183976;
-
+        genesis.nTime = 1518696183;
+        genesis.nNonce = 202138;
+/* 
+        for (int nonce = 0; nonce < 100000000; nonce++) {
+            genesis.nNonce = nonce;
+            uint256 hash = genesis.GetHash();
+            auto hashStr = hash.ToString();
+            if (hashStr[0] == '0' && hashStr[1] == '0' && hashStr[2] == '0' && hashStr[3] == '0' && hashStr[4] == '0') {
+                std::cout << "Hash: " << hashStr << "\nnonce: " << nonce << std::endl;
+                break;
+            }
+        }
+ */
         hashGenesisBlock = genesis.GetHash();
-        assert(hashGenesisBlock == uint256("0x00000fdc268f54ff1368703792dc046b1356e60914c2b5b6348032144bcb2de5"));
+        assert(hashGenesisBlock == uint256("0x000002da72ea66064e16ee039af062683fb4c01a759970587ce067fbb0ce8edd"));
 
         vFixedSeeds.clear();
         vSeeds.clear();
