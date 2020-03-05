@@ -321,7 +321,7 @@ public:
         nMasternodeCountDrift = 4;
         nModifierUpdateBlock = 1; //approx Mon, 17 Apr 2017 04:00:00 GMT
         nMaxMoneyOut = 398360470 * COIN;
-        nZerocoinStartHeight = 50;            // Start accumulation coins here - first zerocoin mint occurs at block 87
+        nZerocoinStartHeight = 2000000;            // Start accumulation coins here - first zerocoin mint occurs at block 87
         nZerocoinAccumulationStartHeight = 350;
         nZerocoinStartTime = 1518696183; // GMT: Thursday, 15. February 2018 12:03:03
         nBlockEnforceSerialRange = 1; //Enforce serial range starting this block
@@ -358,7 +358,7 @@ public:
         nMaxParlayBetPayoutRange = 4000;                                // Minimizes maximum parlay payout size to avoid unnecessary large numbers (Only payout parlay bets that are between 25 - 4000 WRG inclusive).
         nBetPlaceTimeoutBlocks = 120;                                   // Discard bets placed less than 120 seconds (approx. 2 mins) before event start time,
         nMaxParlayLegs = 5;                                             // Minimizes maximum legs in parlay bet
-        nParlayBetStartHeight = 1000000;                                // TODO: pick block height for enabling parlay betting and new payout system
+        nParlayBetStartHeight = 600;                                // TODO: pick block height for enabling parlay betting and new payout system
 
         // Fake Serial Attack
         nFakeSerialBlockheightEnd = -1;
